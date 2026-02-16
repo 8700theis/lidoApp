@@ -180,27 +180,29 @@ export default function ProfileModal() {
         <SafeAreaView style={styles.panelInner} edges={["top", "bottom"]}>
           <View style={styles.headerRow}>
             <View style={{ flex: 1, paddingRight: 10 }}>
-              {/* det her har jeg sat ind */}
               <View style={styles.titleRow}>
-                <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
-                  {mode === "main" ? "Profil" : "Opret spiller"}
+                <Text style={styles.title} numberOfLines={1}>
+                  {profile?.name ?? "Profil"}
                 </Text>
 
-                {mode === "main" && (
+                {!profileLoading && (
                   <View style={styles.roleBadge}>
-                    <Ionicons name={roleIcon.name as any} size={14} color={roleIcon.color} />
-                    <Text style={styles.roleBadgeText}>
-                      {profileLoading ? "…" : effectiveRole}
-                    </Text>
+                    <Ionicons
+                      name={roleIcon.name as any}
+                      size={14}
+                      color={roleIcon.color}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={styles.roleBadgeText}>{effectiveRole}</Text>
                   </View>
                 )}
               </View>
 
-              
               <Text style={styles.subtitle} numberOfLines={1} ellipsizeMode="tail">
                 {session?.user?.email ?? ""}
               </Text>
             </View>
+
 
             <Pressable onPress={close} hitSlop={12} style={styles.iconButton}>
               <Ionicons name="close" size={20} color={COLORS.textSoft} />
