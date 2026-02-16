@@ -9,17 +9,33 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
+  TextInput,
+  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
 import { Ionicons } from "@expo/vector-icons";
 
+type ProfileRow = { role: string; is_admin: boolean; name: string | null };
+
+const ROLES = ["admin", "kaptajn", "spiller"] as const;
+type Role = (typeof ROLES)[number];
+
 export default function ProfileModal() {
   const { session } = useSession();
-  const [profile, setProfile] = useState<{ role: string; is_admin: boolean; name: string | null } | null>(null);
+
+  const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
-  const { width: screenW, height: screenH } = useWindowDimensions();
+
+  // UI state: main / create
+  const [mode, setMode] = useState<"main" | "create">("main");
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newRole, setNewRole] = useState<Role>("spiller");
+  const [creating, setCreating] = useState(false);
+
+  const { width: screenW } = useWindowDimensions();
 
   // Side-sheet bredde (justér her)
   const panelW = useMemo(() => Math.min(Math.round(screenW * 0.67), 390), [screenW]);
@@ -61,7 +77,6 @@ export default function ProfileModal() {
     run();
   }, [session?.user?.id]);
 
-
   const close = () => {
     Animated.parallel([
       Animated.timing(overlayOpacity, {
@@ -78,7 +93,6 @@ export default function ProfileModal() {
   };
 
   useEffect(() => {
-    // hvis skærmbredde ændrer sig (rotation), sørg for at offscreen er korrekt
     panelX.setValue(offscreenX);
     overlayOpacity.setValue(0);
     open();
@@ -90,9 +104,51 @@ export default function ProfileModal() {
     close();
   };
 
+  const effectiveRole: Role = (profile?.is_admin ? "admin" : (profile?.role as Role) || "spiller") ?? "spiller";
+
+  const roleIcon = useMemo(() => {
+    if (effectiveRole === "admin") return { name: "shield-checkmark-outline" as const, color: COLORS.accent };
+    if (effectiveRole === "kaptajn") return { name: "flag-outline" as const, color: "#7FB2FF" };
+    // “dart” vibe: en pil/arrow (Ionicons har ikke dart)
+    return { name: "navigate-outline" as const, color: "#3EE08E" };
+  }, [effectiveRole]);
+
+  const resetCreateForm = () => {
+    setNewName("");
+    setNewEmail("");
+    setNewRole("spiller");
+  };
+
+  const createAllowedUser = async () => {
+    const email = newEmail.trim().toLowerCase();
+    const name = newName.trim();
+
+    if (!name || !email) {
+      Alert.alert("Mangler", "Udfyld navn og email.");
+      return;
+    }
+
+    setCreating(true);
+    const { error } = await supabase.rpc("admin_upsert_allowed_user", {
+      p_email: email,
+      p_name: name,
+      p_role: newRole,
+    });
+    setCreating(false);
+
+    if (error) {
+      Alert.alert("Fejl", error.message);
+      return;
+    }
+
+    Alert.alert("Oprettet ✅", `${name} (${newRole}) er nu whitelisted.`);
+    resetCreateForm();
+    setMode("main");
+  };
+
   return (
     <View style={styles.root}>
-      {/* Overlay (mere transparent så tabben kan ses) */}
+      {/* Overlay */}
       <Animated.View style={[StyleSheet.absoluteFillObject, { opacity: overlayOpacity }]}>
         {Platform.OS === "ios" ? (
           <BlurView intensity={35} tint="dark" style={StyleSheet.absoluteFillObject} />
@@ -101,17 +157,15 @@ export default function ProfileModal() {
         <View
           style={[
             styles.overlayTint,
-            { backgroundColor: Platform.OS === "ios"
-                ? "rgba(0,0,0,0.12)"
-                : "rgba(10,14,20,0.55)"
+            {
+              backgroundColor:
+                Platform.OS === "ios" ? "rgba(0,0,0,0.12)" : "rgba(10,14,20,0.55)",
             },
           ]}
         />
 
         <Pressable style={styles.overlayPress} onPress={close} />
       </Animated.View>
-
-
 
       {/* Panel */}
       <Animated.View
@@ -126,7 +180,23 @@ export default function ProfileModal() {
         <SafeAreaView style={styles.panelInner} edges={["top", "bottom"]}>
           <View style={styles.headerRow}>
             <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={styles.title}>Profil</Text>
+              {/* det her har jeg sat ind */}
+              <View style={styles.titleRow}>
+                <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
+                  {mode === "main" ? "Profil" : "Opret spiller"}
+                </Text>
+
+                {mode === "main" && (
+                  <View style={styles.roleBadge}>
+                    <Ionicons name={roleIcon.name as any} size={14} color={roleIcon.color} />
+                    <Text style={styles.roleBadgeText}>
+                      {profileLoading ? "…" : effectiveRole}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              
               <Text style={styles.subtitle} numberOfLines={1} ellipsizeMode="tail">
                 {session?.user?.email ?? ""}
               </Text>
@@ -139,32 +209,129 @@ export default function ProfileModal() {
 
           <View style={styles.divider} />
 
-          <View style={{ gap: 10 }}>
-            <View style={styles.row}>
-              <Ionicons name="mail-outline" size={18} color={COLORS.textSoft} />
-              <Text style={styles.rowText} numberOfLines={1} ellipsizeMode="middle">
-                {session?.user?.email ?? "—"}
-              </Text>
-            </View>
+          {mode === "main" ? (
+            <>
+              <View style={{ gap: 10 }}>
+                <View style={styles.row}>
+                  <View style={styles.roleIcon}>
+                    <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
+                  </View>
+                  <Text style={styles.rowText} numberOfLines={1} ellipsizeMode="middle">
+                    {session?.user?.email ?? "—"}
+                  </Text>
+                </View>
 
-            <View style={styles.row}>
-              <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.accent} />
-              <Text style={styles.rowText}>
-                Rolle: {profileLoading ? "henter..." : (profile?.is_admin ? "admin" : (profile?.role ?? "player"))}
-              </Text>
-            </View>
-          </View>
+                {/* Rolle (uden "Rolle:" label) 
+                <View style={[styles.row, styles.roleRow]}>
+                  <View style={styles.roleIcon}>
+                    <Ionicons name={roleIcon.name as any} size={18} color={roleIcon.color} />
+                  </View>
+                  <Text style={[styles.rowText, styles.roleText]}>
+                    {profileLoading ? "henter..." : effectiveRole}
+                  </Text>
+                </View>*/}
 
-          <View style={{ flex: 1 }} />
+                {/* Admin-only */}
+                {!profileLoading && profile?.is_admin ? (
+                  <Pressable onPress={() => setMode("create")} style={styles.adminButton}>
+                    <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
+                    <Text style={styles.adminButtonText}>Opret spiller</Text>
+                  </Pressable>
+                ) : null}
+              </View>
 
-          <Pressable onPress={logout} style={styles.primaryButton}>
-            <Ionicons name="log-out-outline" size={18} color={COLORS.bg} />
-            <Text style={styles.primaryButtonText}>Log ud</Text>
-          </Pressable>
+              <View style={{ flex: 1 }} />
 
-          <Pressable onPress={close} style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Luk</Text>
-          </Pressable>
+              <Pressable onPress={logout} style={styles.primaryButton}>
+                <Ionicons name="log-out-outline" size={18} color={COLORS.bg} />
+                <Text style={styles.primaryButtonText}>Log ud</Text>
+              </Pressable>
+
+              <Pressable onPress={close} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Luk</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              {/* Create view */}
+              <View style={{ gap: 10 }}>
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Navn</Text>
+                  <TextInput
+                    value={newName}
+                    onChangeText={setNewName}
+                    placeholder="Fx Mikkel Jensen"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Email</Text>
+                  <TextInput
+                    value={newEmail}
+                    onChangeText={setNewEmail}
+                    placeholder="mail@domæne.dk"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
+
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Rolle</Text>
+
+                  {/* Simple dropdown-style */}
+                  <View style={styles.rolePicker}>
+                    {ROLES.map((r) => (
+                      <Pressable
+                        key={r}
+                        onPress={() => setNewRole(r)}
+                        style={[
+                          styles.roleChip,
+                          newRole === r && styles.roleChipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.roleChipText,
+                            newRole === r && styles.roleChipTextActive,
+                          ]}
+                        >
+                          {r}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable
+                onPress={createAllowedUser}
+                disabled={creating}
+                style={[styles.primaryButton, creating && { opacity: 0.7 }]}
+              >
+                <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.bg} />
+                <Text style={styles.primaryButtonText}>
+                  {creating ? "Opretter..." : "Opret"}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  resetCreateForm();
+                  setMode("main");
+                }}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          )}
         </SafeAreaView>
       </Animated.View>
     </View>
@@ -182,7 +349,6 @@ const COLORS = {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: COLORS.overlay },
   overlayPress: { flex: 1 },
 
   panel: {
@@ -208,9 +374,15 @@ const styles = StyleSheet.create({
     }),
   },
 
+  panelInner: {
+    flex: 1,
+    paddingTop: 6,
+    paddingBottom: 16,
+  },
+
   headerRow: {
     flexDirection: "row",
-    alignItems: "center", // ✅ vigtig: så close ikke ryger ud
+    alignItems: "center",
     justifyContent: "space-between",
   },
   iconButton: {
@@ -222,7 +394,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
   },
 
-  title: { color: COLORS.text, fontSize: 20, fontWeight: "700" },
+  title: { color: COLORS.text, fontSize: 20, fontWeight: "700", flexShrink: 1 },
   subtitle: { marginTop: 4, color: COLORS.textSoft, fontSize: 13 },
 
   divider: {
@@ -241,6 +413,76 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.04)",
   },
   rowText: { color: COLORS.text, fontSize: 14, flex: 1 },
+  
+  // Rolle row: mindre padding/luft
+  roleRow: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  roleIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  roleText: {
+    fontSize: 14,
+    fontWeight: "400",
+    textTransform: "lowercase",
+  },
+
+  adminButton: {
+    marginTop: 6,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  adminButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
+
+  inputWrap: {
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+  },
+  inputLabel: { color: COLORS.textSoft, fontSize: 12 },
+  input: {
+    color: COLORS.text,
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+
+  rolePicker: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  roleChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  roleChipActive: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.35)",
+  },
+  roleChipText: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  roleChipTextActive: {
+    color: COLORS.text,
+  },
 
   primaryButton: {
     marginTop: 14,
@@ -263,14 +505,36 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.06)",
   },
   secondaryButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-  panelInner: {
-  flex: 1,
-  paddingTop: 6,
-  paddingBottom: 16,
-  },
+
   overlayTint: {
-  ...StyleSheet.absoluteFillObject,
-  backgroundColor: "rgba(0,0,0,0.12)", // justér: 0.18–0.35
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.12)",
   },
+  titleRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 10,
+  flexWrap: "nowrap",
+},
+
+roleBadge: {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 6,
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: "rgba(255,255,255,0.06)",
+  borderWidth: 1,
+  borderColor: "rgba(255,255,255,0.08)",
+  flexShrink: 0,
+},
+
+roleBadgeText: {
+  color: COLORS.textSoft,
+  fontSize: 12,
+  fontWeight: "600",
+  textTransform: "lowercase",
+},
 
 });
