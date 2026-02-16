@@ -26,5 +26,20 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      {/* Main app */}
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+      {/* Profile modal */}
+      <Stack.Screen
+        name="(modals)/profile"
+        options={{
+          presentation: "transparentModal",
+          headerShown: false,
+          contentStyle: { backgroundColor: "transparent" },
+        }}
+      />
+    </Stack>
+  );
 }

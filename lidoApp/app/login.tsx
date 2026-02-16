@@ -1,15 +1,22 @@
-import { Redirect } from "expo-router";
+import { router } from "expo-router";
 import { useSession } from "../hooks/useSession";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View, TextInput, Button, Alert } from "react-native";
 import { supabase } from "../lib/supabase";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const { session, loading } = useSession();
-  if (!loading && session) return <Redirect href="/(tabs)" />;
+
+  // Én stabil redirect: hvis logged in -> tabs
+  useEffect(() => {
+    if (!loading && session) {
+      router.replace("/(tabs)");
+    }
+  }, [loading, session]);
 
   const checkWhitelist = async () => {
     const { data: allowed, error } = await supabase.rpc("is_email_allowed", {
@@ -30,27 +37,40 @@ export default function Login() {
   };
 
   const signUp = async () => {
+    if (submitting) return;
     if (!email || !password) return Alert.alert("Mangler", "Email og password.");
 
-    const ok = await checkWhitelist();
-    if (!ok) return;
+    setSubmitting(true);
+    try {
+      const ok = await checkWhitelist();
+      if (!ok) return;
 
-    const { error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) return Alert.alert("Fejl", error.message);
 
-    if (error) {
-      Alert.alert("Fejl", error.message);
-    } else {
+      if (data.session) {
+        Alert.alert("Konto oprettet", "Du er nu logget ind ✅");
+        router.replace("/(tabs)");
+        return;
+      }
+
       Alert.alert("Konto oprettet", "Du kan nu logge ind ✅");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const signIn = async () => {
+    if (submitting) return;
     if (!email || !password) return Alert.alert("Mangler", "Email og password.");
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      Alert.alert("Fejl", error.message);
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) Alert.alert("Fejl", error.message);
+      // navigation sker via useEffect når session kommer
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -74,8 +94,8 @@ export default function Login() {
         style={{ borderWidth: 1, padding: 12, borderRadius: 8 }}
       />
 
-      <Button title="Log ind" onPress={signIn} />
-      <Button title="Opret bruger" onPress={signUp} />
+      <Button title={submitting ? "..." : "Log ind"} onPress={signIn} disabled={submitting} />
+      <Button title={submitting ? "..." : "Opret bruger"} onPress={signUp} disabled={submitting} />
     </View>
   );
 }
