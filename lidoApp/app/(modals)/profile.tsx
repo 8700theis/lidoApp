@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   TextInput,
   Alert,
+  ScrollView,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -31,12 +32,18 @@ export default function ProfileModal() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
-  // UI state: main / create
-  const [mode, setMode] = useState<"main" | "create">("main");
+  // UI state: main / create / players
+  const [mode, setMode] = useState<"main" | "create" | "players">("main");
+
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<Role>("spiller");
   const [creating, setCreating] = useState(false);
+
+  // Players list state
+  const [players, setPlayers] = useState<Array<{ email: string; name: string | null; role: string }>>([]);
+  const [playersLoading, setPlayersLoading] = useState(false);
+
 
   const { width: screenW } = useWindowDimensions();
 
@@ -79,6 +86,14 @@ export default function ProfileModal() {
 
     run();
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (mode === "players") {
+      loadPlayers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
 
   const close = () => {
     // reset UI så den altid åbner i main
@@ -123,6 +138,21 @@ export default function ProfileModal() {
     return { name: "navigate-outline", color: "#3EE08E" };
   }, [effectiveRole]);
 
+  const roleMeta = (role: string) => {
+    const r = (role || "").toLowerCase();
+    if (r === "admin") return { name: "shield-checkmark-outline" as const, color: COLORS.accent };
+    if (r === "kaptajn") return { name: "flag-outline" as const, color: "#7FB2FF" }; // “kaptajn” badge
+    return { name: "navigate-outline" as const, color: "#3EE08E" }; // “spiller” (dart/pil vibe)
+  };
+
+  const roleRank = (role: string) => {
+    const r = (role || "").toLowerCase();
+    if (r === "admin") return 0;
+    if (r === "kaptajn") return 1;
+    return 2; // spiller + alt andet
+  };
+
+
   const resetCreateForm = () => {
     setNewName("");
     setNewEmail("");
@@ -152,9 +182,39 @@ export default function ProfileModal() {
     }
 
     Alert.alert("Oprettet ✅", `${name} (${newRole}) er nu whitelisted.`);
+    await loadPlayers();
     resetCreateForm();
     setMode("main");
   };
+
+  const loadPlayers = async () => {
+    setPlayersLoading(true);
+
+    const { data, error } = await supabase
+      .from("allowed_users")
+      .select("email,name,role");
+
+    setPlayersLoading(false);
+
+    if (error) {
+      Alert.alert("Fejl", error.message);
+      return;
+    }
+
+    const list = (data ?? []).slice().sort((a, b) => {
+      // 1) rolle-rækkefølge: admin -> kaptajn -> spiller
+      const rr = roleRank(a.role) - roleRank(b.role);
+      if (rr !== 0) return rr;
+
+      // 2) alfabetisk på navn (fallback til email)
+      const an = (a.name?.trim() || a.email || "").toLowerCase();
+      const bn = (b.name?.trim() || b.email || "").toLowerCase();
+      return an.localeCompare(bn, "da");
+    });
+
+    setPlayers(list as any);
+  };
+
 
   return (
     <View style={styles.root}>
@@ -240,6 +300,15 @@ export default function ProfileModal() {
                     <Text style={styles.adminButtonText}>Opret spiller</Text>
                   </Pressable>
                 ) : null}
+
+                {/* Admin-only */}
+                {!profileLoading && profile?.is_admin ? (
+                  <Pressable onPress={() => setMode("players")} style={styles.adminButton}>
+                    <Ionicons name="people-outline" size={18} color={COLORS.text} />
+                    <Text style={styles.adminButtonText}>Spillere</Text>
+                  </Pressable>
+                ) : null}
+
               </View>
 
               <View style={{ flex: 1 }} />
@@ -253,7 +322,7 @@ export default function ProfileModal() {
                 <Text style={styles.secondaryButtonText}>Luk</Text>
               </Pressable>
             </>
-          ) : (
+          ) : mode === "create" ? (
             <>
               {/* ✅ Create view – header forbliver profil-headeren, og "Opret spiller" bliver en overskrift hernede */}
               <Text style={styles.sectionTitle}>Opret spiller</Text>
@@ -321,6 +390,52 @@ export default function ProfileModal() {
                   resetCreateForm();
                   setMode("main");
                 }}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              {/* Players view */}
+              <View style={{ gap: 10 }}>
+                <Text style={styles.sectionTitlePlayers}>Spillere</Text>
+
+                {playersLoading ? (
+                  <Text style={styles.helpText}>Henter...</Text>
+                ) : players.length === 0 ? (
+                  <Text style={styles.helpText}>Ingen whitelisted endnu.</Text>
+                ) : (
+                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                    {players.map((p) => {
+                      const icon = roleMeta(p.role);
+                      const label = (p.name?.trim() || p.email).trim();
+
+                      return (
+                        <View key={p.email} style={styles.playerRow}>
+                          <View style={styles.playerLeft}>
+                            <Text style={styles.playerName} numberOfLines={1}>
+                              {label}
+                            </Text>
+
+                            <Ionicons
+                              name={icon.name as any}
+                              size={16}
+                              color={icon.color}
+                              style={{ marginLeft: 10 }}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable
+                onPress={() => setMode("main")}
                 style={styles.secondaryButton}
               >
                 <Text style={styles.secondaryButtonText}>Tilbage</Text>
@@ -482,7 +597,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flexWrap: "nowrap",
   },
-
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -494,11 +608,37 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
     flexShrink: 0,
   },
-
   roleBadgeText: {
     color: COLORS.textSoft,
     fontSize: 12,
     fontWeight: "600",
     textTransform: "lowercase",
+  },
+  sectionTitlePlayers: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  helpText: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+  },
+  playerRow: {
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  playerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  playerName: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "600",
+    flexShrink: 1,
   },
 });
