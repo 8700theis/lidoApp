@@ -32,8 +32,10 @@ export default function ProfileModal() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
-  // UI state: main / create / players
-  const [mode, setMode] = useState<"main" | "create" | "players">("main");
+  // UI state: main / create / players / edit players
+  const [mode, setMode] = useState<
+  "main" | "create" | "players" | "edit" | "teams" | "teamDetail" | "selectCaptain" | "selectTeamPlayer">("main");
+
 
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
@@ -43,6 +45,25 @@ export default function ProfileModal() {
   // Players list state
   const [players, setPlayers] = useState<Array<{ email: string; name: string | null; role: string }>>([]);
   const [playersLoading, setPlayersLoading] = useState(false);
+
+  // Teams list state
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
+
+  // Selected team detail
+  const [selectedTeam, setSelectedTeam] = useState<{ id: string; name: string } | null>(null);
+  const [teamCaptain, setTeamCaptain] = useState<{ email: string; name: string | null; role: string } | null>(null);
+  const [teamPlayers, setTeamPlayers] = useState<Array<{ email: string; name: string | null; role: string }>>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  // Edit player state
+  const [selectedPlayer, setSelectedPlayer] = useState<{ email: string; name: string | null; role: string } | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<Role>("spiller");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
 
   const { width: screenW } = useWindowDimensions();
@@ -119,6 +140,17 @@ export default function ProfileModal() {
     open();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [offscreenX]);
+
+  useEffect(() => {
+    if (mode === "players" || mode === "selectCaptain" || mode === "selectTeamPlayer") {
+      loadPlayers();
+    }
+    if (mode === "teams") {
+      loadTeams();
+    }
+    // teamDetail loader selv via openTeamDetail
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -215,6 +247,284 @@ export default function ProfileModal() {
     setPlayers(list as any);
   };
 
+  const loadTeams = async () => {
+    setTeamsLoading(true);
+
+    const { data, error } = await supabase
+      .from("teams")
+      .select("id,name")
+      .order("name", { ascending: true });
+
+    setTeamsLoading(false);
+
+    if (error) {
+      Alert.alert("Fejl", error.message);
+      return;
+    }
+
+    setTeams((data ?? []) as any);
+  };
+
+  const loadTeamDetail = async (teamId: string) => {
+    setTeamLoading(true);
+    setTeamCaptain(null);
+    setTeamPlayers([]);
+
+    // 1) hent team med kaptajn-email
+    const { data: team, error: teamError } = await supabase
+      .from("teams")
+      .select("id,name,captain_email")
+      .eq("id", teamId)
+      .single();
+
+    if (teamError) {
+      setTeamLoading(false);
+      Alert.alert("Fejl", teamError.message);
+      return;
+    }
+
+    // hold navn opdateret fra DB
+    setSelectedTeam({ id: team.id, name: team.name });
+
+    // 2) hent emails på spillere på holdet
+    const { data: links, error: linksError } = await supabase
+      .from("team_players")
+      .select("email")
+      .eq("team_id", teamId);
+
+    if (linksError) {
+      setTeamLoading(false);
+      Alert.alert("Fejl", linksError.message);
+      return;
+    }
+
+    const playerEmails = (links ?? []).map((l) => l.email as string);
+
+    // 3) byg liste af emails der skal hentes fra allowed_users
+    const emailsToFetch = new Set<string>();
+    if (team.captain_email) emailsToFetch.add(team.captain_email.toLowerCase());
+    playerEmails.forEach((e: string) => emailsToFetch.add(e.toLowerCase()));
+
+    let allowedRows: { email: string; name: string | null; role: string }[] = [];
+
+    if (emailsToFetch.size > 0) {
+      const { data: allowed, error: allowedError } = await supabase
+        .from("allowed_users")
+        .select("email,name,role")
+        .in("email", Array.from(emailsToFetch));
+
+      if (allowedError) {
+        setTeamLoading(false);
+        Alert.alert("Fejl", allowedError.message);
+        return;
+      }
+
+      allowedRows = (allowed ?? []) as any;
+    }
+
+    // 4) find kaptajn
+    if (team.captain_email) {
+      const cap = allowedRows.find(
+        (r) => r.email.toLowerCase() === team.captain_email.toLowerCase()
+      );
+      if (cap) {
+        setTeamCaptain(cap);
+      } else {
+        setTeamCaptain(null);
+      }
+    } else {
+      setTeamCaptain(null);
+    }
+
+    // 5) byg spillerliste
+    const playersForTeam = playerEmails
+      .map((pe) =>
+        allowedRows.find((r) => r.email.toLowerCase() === (pe || "").toLowerCase())
+      )
+      .filter(Boolean) as { email: string; name: string | null; role: string }[];
+
+    setTeamPlayers(playersForTeam);
+    setTeamLoading(false);
+  };
+
+  const openTeamDetail = (team: { id: string; name: string }) => {
+    setSelectedTeam(team);
+    setMode("teamDetail");
+    loadTeamDetail(team.id);
+  };
+
+
+  const setCaptainForTeam = async (player: { email: string; name: string | null; role: string }) => {
+    if (!selectedTeam) return;
+
+    const email = player.email.toLowerCase();
+
+    // Vi gør 3 ting:
+    // 1) sætte rollen til kaptajn i allowed_users
+    // 2) sætte captains email på team
+    // 3) sikre at kaptajn også er registreret som spiller på holdet
+
+    const updates = [];
+
+    // 1) role -> kaptajn
+    updates.push(
+      supabase
+        .from("allowed_users")
+        .update({ role: "kaptajn" })
+        .eq("email", email)
+    );
+
+    // 2) team.captain_email
+    updates.push(
+      supabase
+        .from("teams")
+        .update({ captain_email: email })
+        .eq("id", selectedTeam.id)
+    );
+
+    // 3) tilføj til team_players (on conflict ignored via primary key)
+    updates.push(
+      supabase
+        .from("team_players")
+        .insert({ team_id: selectedTeam.id, email })
+        .catch(() => {})
+    );
+
+    const results = await Promise.allSettled(updates);
+    const failed = results.find((r) => r.status === "rejected");
+
+    if (failed) {
+      Alert.alert("Fejl", "Kunne ikke opdatere kaptajn.");
+      return;
+    }
+
+    // Reload detail
+    await loadTeamDetail(selectedTeam.id);
+    setMode("teamDetail");
+  };
+
+  const clearCaptainForTeam = async () => {
+    if (!selectedTeam || !teamCaptain) return;
+
+    const email = teamCaptain.email.toLowerCase();
+
+    // 1) sæt rolle tilbage til "spiller" (hvis du vil være helt fancy kan vi
+    // senere tjekke om de er kaptajn for andre hold først)
+    const { error: roleError } = await supabase
+      .from("allowed_users")
+      .update({ role: "spiller" })
+      .eq("email", email);
+
+    if (roleError) {
+      Alert.alert("Fejl", roleError.message);
+      return;
+    }
+
+    // 2) fjern captain_email fra holdet
+    const { error: teamError } = await supabase
+      .from("teams")
+      .update({ captain_email: null })
+      .eq("id", selectedTeam.id);
+
+    if (teamError) {
+      Alert.alert("Fejl", teamError.message);
+      return;
+    }
+
+    await loadTeamDetail(selectedTeam.id);
+  };
+
+  const addPlayerToTeam = async (player: { email: string; name: string | null; role: string }) => {
+    if (!selectedTeam) return;
+
+    const email = player.email.toLowerCase();
+
+    const { error } = await supabase
+      .from("team_players")
+      .insert({ team_id: selectedTeam.id, email });
+
+    if (error) {
+      // hvis det allerede findes pga primary key, er det ikke en katastrofe
+      if (!error.message.includes("duplicate key")) {
+        Alert.alert("Fejl", error.message);
+        return;
+      }
+    }
+
+    await loadTeamDetail(selectedTeam.id);
+    setMode("teamDetail");
+  };
+
+
+
+  const openEditPlayer = (p: { email: string; name: string | null; role: string }) => {
+    setSelectedPlayer(p);
+    setEditName((p.name ?? "").trim());
+    setEditRole(((p.role as Role) || "spiller"));
+    setMode("edit");
+  };
+
+  const savePlayerEdits = async () => {
+    if (!selectedPlayer) return;
+
+    const name = editName.trim();
+    const role = editRole;
+
+    if (!name) {
+      Alert.alert("Mangler", "Navn må ikke være tomt.");
+      return;
+    }
+
+    setSavingEdit(true);
+    const { error } = await supabase.rpc("admin_update_allowed_user", {
+      p_email: selectedPlayer.email,
+      p_name: name,
+      p_role: role,
+    });
+    setSavingEdit(false);
+
+    if (error) {
+      Alert.alert("Fejl", error.message);
+      return;
+    }
+
+    Alert.alert("Gemt ✅", "Spilleren er opdateret.");
+    await loadPlayers(); // refresh liste
+    setMode("players");  // tilbage til liste
+  };
+
+  const deletePlayer = async () => {
+    if (!selectedPlayer) return;
+
+    Alert.alert(
+      "Slet spiller?",
+      `Er du sikker på at du vil fjerne "${selectedPlayer.name ?? selectedPlayer.email}" fra whitelisten?`,
+      [
+        { text: "Annuller", style: "cancel" },
+        {
+          text: "Slet",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            const { error } = await supabase.rpc("admin_delete_allowed_user", {
+              p_email: selectedPlayer.email,
+            });
+            setDeleting(false);
+
+            if (error) {
+              Alert.alert("Fejl", error.message);
+              return;
+            }
+
+            Alert.alert("Slettet ✅", "Spilleren er fjernet fra whitelisten.");
+            await loadPlayers();
+            setSelectedPlayer(null);
+            setMode("players");
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -309,6 +619,14 @@ export default function ProfileModal() {
                   </Pressable>
                 ) : null}
 
+                {/* Admin-only */}
+                {!profileLoading && profile?.is_admin ? (
+                  <Pressable onPress={() => setMode("teams")} style={styles.adminButton}>
+                    <Ionicons name="layers-outline" size={18} color={COLORS.text} />
+                    <Text style={styles.adminButtonText}>Hold</Text>
+                  </Pressable>
+                ) : null}
+
               </View>
 
               <View style={{ flex: 1 }} />
@@ -395,7 +713,7 @@ export default function ProfileModal() {
                 <Text style={styles.secondaryButtonText}>Tilbage</Text>
               </Pressable>
             </>
-          ) : (
+          ) : mode === "players" ? (
             <>
               {/* Players view */}
               <View style={{ gap: 10 }}>
@@ -412,7 +730,11 @@ export default function ProfileModal() {
                       const label = (p.name?.trim() || p.email).trim();
 
                       return (
-                        <View key={p.email} style={styles.playerRow}>
+                        <Pressable
+                          key={p.email}
+                          onPress={() => openEditPlayer(p)}
+                          style={styles.playerRow}
+                        >
                           <View style={styles.playerLeft}>
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
@@ -425,7 +747,16 @@ export default function ProfileModal() {
                               style={{ marginLeft: 10 }}
                             />
                           </View>
-                        </View>
+
+                          {/* Subtil chevron */}
+                          <Ionicons
+                            name="chevron-forward"
+                            size={16}
+                            color={COLORS.textSoft}
+                            style={{ opacity: 0.5 }}
+                          />
+                        </Pressable>
+
                       );
                     })}
                   </ScrollView>
@@ -438,6 +769,378 @@ export default function ProfileModal() {
                 onPress={() => setMode("main")}
                 style={styles.secondaryButton}
               >
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : mode === "teams" ? (
+            <>
+              {/* Teams view */}
+              <View style={{ gap: 10 }}>
+                <Text style={styles.sectionTitle}>Opret hold</Text>
+
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Holdnavn</Text>
+                  <TextInput
+                    value={newTeamName}
+                    onChangeText={setNewTeamName}
+                    placeholder="Fx Lido 1"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                <Pressable
+                  onPress={async () => {
+                    const name = newTeamName.trim();
+                    if (!name) {
+                      Alert.alert("Mangler", "Skriv et navn til holdet.");
+                      return;
+                    }
+
+                    setCreatingTeam(true);
+                    const { error } = await supabase
+                      .from("teams")
+                      .insert({ name });
+                    setCreatingTeam(false);
+
+                    if (error) {
+                      Alert.alert("Fejl", error.message);
+                      return;
+                    }
+
+                    setNewTeamName("");
+                    await loadTeams();
+                  }}
+                  disabled={creatingTeam}
+                  style={[styles.primaryButton, { marginTop: 4 }, creatingTeam && { opacity: 0.7 }]}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={COLORS.bg} />
+                  <Text style={styles.primaryButtonText}>
+                    {creatingTeam ? "Opretter..." : "Opret hold"}
+                  </Text>
+                </Pressable>
+
+                {teamsLoading ? (
+                  <Text style={styles.helpText}>Henter hold...</Text>
+                ) : teams.length === 0 ? (
+                  <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
+                ) : (
+                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                    {teams.map((t) => (
+                      <Pressable
+                        key={t.id}
+                        onPress={() => openTeamDetail(t)}
+                        style={styles.playerRow}
+                      >
+                        <View style={styles.playerLeft}>
+                          <Text style={styles.playerName} numberOfLines={1}>
+                            {t.name}
+                          </Text>
+                        </View>
+
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color={COLORS.textSoft}
+                          style={{ opacity: 0.5 }}
+                        />
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable
+                onPress={() => setMode("main")}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : mode === "teamDetail" ? (
+            <>
+              {/* Team detail view */}
+              <View style={{ gap: 10 }}>
+                <Text style={styles.sectionTitlePlayers}>
+                  {selectedTeam ? selectedTeam.name : "Hold"}
+                </Text>
+
+                {/* Kaptajn sektion */}
+                <Text style={styles.sectionTitle}>Holdkaptajn</Text>
+
+                <Pressable
+                  onPress={() => setMode("selectCaptain")}
+                  style={styles.inputWrap}
+                >
+                  {teamLoading ? (
+                    <Text style={styles.helpText}>Henter...</Text>
+                  ) : teamCaptain ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Text style={styles.playerName} numberOfLines={1}>
+                          {teamCaptain.name ?? teamCaptain.email}
+                        </Text>
+                        <Ionicons
+                          name={roleMeta(teamCaptain.role).name as any}
+                          size={16}
+                          color={roleMeta(teamCaptain.role).color}
+                          style={{ marginLeft: 10 }}
+                        />
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={16} color={COLORS.textSoft} style={{ opacity: 0.5 }} />
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text style={styles.helpText}>Ingen kaptajn valgt</Text>
+                      <Ionicons name="add-circle-outline" size={20} color={COLORS.accent} />
+                    </View>
+                  )}
+                </Pressable>
+
+                {/* Slet kaptajn knap hvis der er en */}
+                {teamCaptain && (
+                  <Pressable
+                    onPress={() =>
+                      Alert.alert(
+                        "Fjern kaptajn?",
+                        "Er du sikker på at du vil fjerne denne kaptajn?",
+                        [
+                          { text: "Annuller", style: "cancel" },
+                          {
+                            text: "Fjern",
+                            style: "destructive",
+                            onPress: () => clearCaptainForTeam(),
+                          },
+                        ]
+                      )
+                    }
+                    style={styles.dangerButton}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={COLORS.text} />
+                    <Text style={styles.dangerButtonText}>Fjern kaptajn</Text>
+                  </Pressable>
+                )}
+
+                {/* Spillere på holdet */}
+                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Spillere</Text>
+
+                {teamLoading ? (
+                  <Text style={styles.helpText}>Henter spillere...</Text>
+                ) : teamPlayers.length === 0 ? (
+                  <Text style={styles.helpText}>Ingen spillere på holdet endnu.</Text>
+                ) : (
+                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                    {teamPlayers.map((p) => {
+                      const icon = roleMeta(p.role);
+                      const label = (p.name?.trim() || p.email).trim();
+
+                      return (
+                        <View key={p.email} style={styles.playerRow}>
+                          <View style={styles.playerLeft}>
+                            <Text style={styles.playerName} numberOfLines={1}>
+                              {label}
+                            </Text>
+                            <Ionicons
+                              name={icon.name as any}
+                              size={16}
+                              color={icon.color}
+                              style={{ marginLeft: 10 }}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+
+                <Pressable
+                  onPress={() => setMode("selectTeamPlayer")}
+                  style={[styles.primaryButton, { marginTop: 10 }]}
+                >
+                  <Ionicons name="person-add-outline" size={18} color={COLORS.bg} />
+                  <Text style={styles.primaryButtonText}>Tilføj spiller</Text>
+                </Pressable>
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable onPress={() => setMode("teams")} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : mode === "selectCaptain" ? (
+            <>
+              <View style={{ gap: 10 }}>
+                <Text style={styles.sectionTitlePlayers}>Vælg kaptajn</Text>
+
+                {playersLoading ? (
+                  <Text style={styles.helpText}>Henter spillere...</Text>
+                ) : players.length === 0 ? (
+                  <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
+                ) : (
+                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                    {players.map((p) => {
+                      const icon = roleMeta(p.role);
+                      const label = (p.name?.trim() || p.email).trim();
+
+                      return (
+                        <Pressable
+                          key={p.email}
+                          onPress={() => setCaptainForTeam(p)}
+                          style={styles.playerRow}
+                        >
+                          <View style={styles.playerLeft}>
+                            <Text style={styles.playerName} numberOfLines={1}>
+                              {label}
+                            </Text>
+                            <Ionicons
+                              name={icon.name as any}
+                              size={16}
+                              color={icon.color}
+                              style={{ marginLeft: 10 }}
+                            />
+                          </View>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={16}
+                            color={COLORS.textSoft}
+                            style={{ opacity: 0.5 }}
+                          />
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : mode === "selectTeamPlayer" ? (
+            <>
+              <View style={{ gap: 10 }}>
+                <Text style={styles.sectionTitlePlayers}>Vælg spiller</Text>
+
+                {playersLoading ? (
+                  <Text style={styles.helpText}>Henter spillere...</Text>
+                ) : players.length === 0 ? (
+                  <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
+                ) : (
+                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                    {players.map((p) => {
+                      const icon = roleMeta(p.role);
+                      const label = (p.name?.trim() || p.email).trim();
+
+                      return (
+                        <Pressable
+                          key={p.email}
+                          onPress={() => addPlayerToTeam(p)}
+                          style={styles.playerRow}
+                        >
+                          <View style={styles.playerLeft}>
+                            <Text style={styles.playerName} numberOfLines={1}>
+                              {label}
+                            </Text>
+                            <Ionicons
+                              name={icon.name as any}
+                              size={16}
+                              color={icon.color}
+                              style={{ marginLeft: 10 }}
+                            />
+                          </View>
+                          <Ionicons
+                            name="chevron-forward"
+                            size={16}
+                            color={COLORS.textSoft}
+                            style={{ opacity: 0.5 }}
+                          />
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              {/* Edit view */}
+              <Text style={styles.sectionTitlePlayers}>Rediger spiller</Text>
+
+              <View style={{ gap: 10 }}>
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Navn</Text>
+                  <TextInput
+                    value={editName}
+                    onChangeText={setEditName}
+                    placeholder="Navn"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Rolle</Text>
+                  <View style={styles.rolePicker}>
+                    {ROLES.map((r) => (
+                      <Pressable
+                        key={r}
+                        onPress={() => setEditRole(r)}
+                        style={[styles.roleChip, editRole === r && styles.roleChipActive]}
+                      >
+                        <Text style={[styles.roleChipText, editRole === r && styles.roleChipTextActive]}>
+                          {r}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Info (email vises read-only) */}
+                <View style={styles.row}>
+                  <View style={styles.roleIcon}>
+                    <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
+                  </View>
+                  <Text style={styles.rowText} numberOfLines={1}>
+                    {selectedPlayer?.email ?? ""}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flex: 1 }} />
+
+              <Pressable
+                onPress={savePlayerEdits}
+                disabled={savingEdit}
+                style={[styles.primaryButton, savingEdit && { opacity: 0.7 }]}
+              >
+                <Ionicons name="save-outline" size={18} color={COLORS.bg} />
+                <Text style={styles.primaryButtonText}>{savingEdit ? "Gemmer..." : "Gem ændringer"}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={deletePlayer}
+                disabled={deleting}
+                style={[styles.dangerButton, deleting && { opacity: 0.7 }]}
+              >
+                <Ionicons name="trash-outline" size={18} color={COLORS.text} />
+                <Text style={styles.dangerButtonText}>{deleting ? "Sletter..." : "Slet spiller"}</Text>
+              </Pressable>
+
+              <Pressable onPress={() => setMode("players")} style={styles.secondaryButton}>
                 <Text style={styles.secondaryButtonText}>Tilbage</Text>
               </Pressable>
             </>
@@ -619,6 +1322,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     marginTop: 2,
+    marginBottom: 10,
   },
   helpText: {
     color: COLORS.textSoft,
@@ -629,7 +1333,11 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.04)",
     paddingVertical: 12,
     paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
+
   playerLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -641,4 +1349,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flexShrink: 1,
   },
+  dangerButton: {
+    marginTop: 10,
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 82, 82, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 82, 82, 0.35)",
+  },
+  dangerButtonText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
 });

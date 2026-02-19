@@ -1,9 +1,14 @@
+import { useSession } from "../hooks/useSession";
+import { useRouter } from "expo-router";
 import { Stack } from "expo-router";
 import { useEffect } from "react";
 import * as Linking from "expo-linking";
 import { supabase } from "../lib/supabase";
 
 export default function RootLayout() {
+  const { session } = useSession();
+  const router = useRouter();
+
   useEffect(() => {
     const handleUrl = async (url: string) => {
       const parsed = Linking.parse(url);
@@ -25,6 +30,29 @@ export default function RootLayout() {
     const sub = Linking.addEventListener("url", (event) => handleUrl(event.url));
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    const checkWhitelist = async () => {
+      if (!session?.user?.email) return;
+
+      const { data, error } = await supabase
+        .from("allowed_users")
+        .select("email")
+        .eq("email", session.user.email.toLowerCase())
+        .maybeSingle();
+
+      if (error) return;
+
+      // Hvis ikke whitelisted → log ud
+      if (!data) {
+        await supabase.auth.signOut();
+        router.replace("/login");
+      }
+    };
+
+    checkWhitelist();
+  }, [session?.user?.email]);
+
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
