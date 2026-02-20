@@ -63,6 +63,52 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   const [newTeamName, setNewTeamName] = useState("");
   const [creatingTeam, setCreatingTeam] = useState(false);
 
+  // Global badge-oversigt for ALLE brugere (ikke kun mig selv)
+  const [captainEmails, setCaptainEmails] = useState<Set<string>>(new Set());
+  const [playerEmails, setPlayerEmails] = useState<Set<string>>(new Set());
+
+  // Helper til at få badges for en vilkårlig bruger
+  const getBadgesForUser = (email: string, role: string | null) => {
+    const mail = (email || "").toLowerCase();
+    const r = (role || "").toLowerCase();
+
+    const admin = r === "admin";
+    const captain = captainEmails.has(mail);
+    const player = playerEmails.has(mail);
+
+    return { admin, captain, player };
+  };
+
+  const renderBadgesSmall = (badges: { admin: boolean; captain: boolean; player: boolean }) => {
+    return (
+      <View style={styles.badgeRowSmall}>
+        {badges.admin && (
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={14}
+            color={COLORS.accent}
+            style={{ marginRight: 4 }}
+          />
+        )}
+        {badges.captain && (
+          <Ionicons
+            name="flag-outline"
+            size={14}
+            color="#7FB2FF"
+            style={{ marginRight: 4 }}
+          />
+        )}
+        {badges.player && (
+          <Ionicons
+            name="navigate-outline"
+            size={14}
+            color="#3EE08E"
+          />
+        )}
+      </View>
+    );
+  };
+
   // Selected team detail
   const [selectedTeam, setSelectedTeam] = useState<{ id: string; name: string } | null>(null);
   const [teamCaptain, setTeamCaptain] = useState<{ email: string; name: string | null; role: string } | null>(null);
@@ -190,7 +236,12 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   }, [offscreenX]);
 
   useEffect(() => {
-    if (mode === "players" || mode === "selectCaptain" || mode === "selectTeamPlayer") {
+    if (
+      mode === "players" ||
+      mode === "selectCaptain" ||
+      mode === "selectTeamPlayer" ||
+      mode === "teamDetail"
+    ) {
       loadPlayers();
     }
     if (mode === "teams") {
@@ -303,6 +354,7 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
         Alert.alert("Fejl", capError.message);
         return;
       }
+      await loadTeams();   // 🔁 refresh så create-view ser den nye kaptajn
     }
 
     setCreating(false);
@@ -325,25 +377,61 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
       .from("allowed_users")
       .select("email,name,role");
 
-    setPlayersLoading(false);
-
     if (error) {
+      setPlayersLoading(false);
       Alert.alert("Fejl", error.message);
       return;
     }
 
-    const list = (data ?? []).slice().sort((a, b) => {
-      // 1) rolle-rækkefølge: admin -> kaptajn -> spiller
+    const baseList = (data ?? []) as { email: string; name: string | null; role: string }[];
+
+    // alle emails i lower-case
+    const emails = baseList.map((p) => (p.email || "").toLowerCase());
+
+    const [{ data: capRows, error: capErr }, { data: playerRows, error: playerErr }] =
+      await Promise.all([
+        supabase
+          .from("teams")
+          .select("captain_email")
+          .in("captain_email", emails),
+        supabase
+          .from("team_players")
+          .select("email")
+          .in("email", emails),
+      ]);
+
+    if (capErr || playerErr) {
+      // vi vil ikke crashe viewet her – viser bare uden ekstra badges
+      console.log("badge fetch error", capErr?.message, playerErr?.message);
+    }
+
+    const captainSet = new Set(
+      (capRows ?? [])
+        .map((r: any) => (r.captain_email || "").toLowerCase())
+        .filter(Boolean)
+    );
+    const playerSet = new Set(
+      (playerRows ?? [])
+        .map((r: any) => (r.email || "").toLowerCase())
+        .filter(Boolean)
+    );
+
+    // gem til brug i alle views
+    setCaptainEmails(captainSet);
+    setPlayerEmails(playerSet);
+
+    // sortér som før
+    const list = baseList.slice().sort((a, b) => {
       const rr = roleRank(a.role) - roleRank(b.role);
       if (rr !== 0) return rr;
 
-      // 2) alfabetisk på navn (fallback til email)
       const an = (a.name?.trim() || a.email || "").toLowerCase();
       const bn = (b.name?.trim() || b.email || "").toLowerCase();
       return an.localeCompare(bn, "da");
     });
 
     setPlayers(list as any);
+    setPlayersLoading(false);
   };
 
   const loadTeams = async () => {
@@ -454,21 +542,27 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
 
 
   const setCaptainForTeam = async (player: { email: string; name: string | null; role: string }) => {
-  if (!selectedTeam) return;
+    if (!selectedTeam) return;
 
-  const { error } = await supabase
-    .from("teams")
-    .update({ captain_email: player.email.toLowerCase() })
-    .eq("id", selectedTeam.id);
+    const email = player.email.toLowerCase();
 
-  if (error) {
-    Alert.alert("Fejl", error.message);
-    return;
-  }
+    const { error } = await supabase
+      .from("teams")
+      .update({ captain_email: email })
+      .eq("id", selectedTeam.id);
 
-  await loadTeamDetail(selectedTeam.id);
-  setMode("teamDetail");
-};
+    if (error) {
+      Alert.alert("Fejl", error.message);
+      return;
+    }
+
+    await Promise.all([
+      loadTeamDetail(selectedTeam.id),
+      loadTeams(),  // 🔁 så “Vælg hold til kaptajn” bliver opdateret
+    ]);
+
+    setMode("teamDetail");
+  };
 
 
 const clearCaptainForTeam = async () => {
@@ -486,6 +580,10 @@ const clearCaptainForTeam = async () => {
   }
 
   await loadTeamDetail(selectedTeam.id);
+  await Promise.all([
+    loadTeamDetail(selectedTeam.id),
+    loadTeams(),
+  ]);
 };
 
 
@@ -956,8 +1054,8 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {players.map((p) => {
-                      const icon = roleMeta(p.role);
                       const label = (p.name?.trim() || p.email).trim();
+                      const b = getBadgesForUser(p.email, p.role);
 
                       return (
                         <Pressable
@@ -969,16 +1067,9 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
                             </Text>
-
-                            <Ionicons
-                              name={icon.name as any}
-                              size={16}
-                              color={icon.color}
-                              style={{ marginLeft: 10 }}
-                            />
+                            {renderBadgesSmall(b)}
                           </View>
 
-                          {/* Subtil chevron */}
                           <Ionicons
                             name="chevron-forward"
                             size={16}
@@ -986,7 +1077,6 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             style={{ opacity: 0.5 }}
                           />
                         </Pressable>
-
                       );
                     })}
                   </ScrollView>
@@ -1113,12 +1203,7 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                         <Text style={styles.playerName} numberOfLines={1}>
                           {teamCaptain.name ?? teamCaptain.email}
                         </Text>
-                        <Ionicons
-                          name={roleMeta(teamCaptain.role).name as any}
-                          size={16}
-                          color={roleMeta(teamCaptain.role).color}
-                          style={{ marginLeft: 10 }}
-                        />
+                        {renderBadgesSmall(getBadgesForUser(teamCaptain.email, teamCaptain.role))}
                       </View>
 
                       <Ionicons name="chevron-forward" size={16} color={COLORS.textSoft} style={{ opacity: 0.5 }} />
@@ -1165,8 +1250,8 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {teamPlayers.map((p) => {
-                      const icon = roleMeta(p.role);
                       const label = (p.name?.trim() || p.email).trim();
+                      const b = getBadgesForUser(p.email, p.role);
 
                       return (
                         <View key={p.email} style={styles.playerRow}>
@@ -1174,12 +1259,7 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
                             </Text>
-                            <Ionicons
-                              name={icon.name as any}
-                              size={16}
-                              color={icon.color}
-                              style={{ marginLeft: 10 }}
-                            />
+                            {renderBadgesSmall(b)}
                           </View>
                         </View>
                       );
@@ -1214,8 +1294,8 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {players.map((p) => {
-                      const icon = roleMeta(p.role);
                       const label = (p.name?.trim() || p.email).trim();
+                      const b = getBadgesForUser(p.email, p.role);
 
                       return (
                         <Pressable
@@ -1227,12 +1307,7 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
                             </Text>
-                            <Ionicons
-                              name={icon.name as any}
-                              size={16}
-                              color={icon.color}
-                              style={{ marginLeft: 10 }}
-                            />
+                            {renderBadgesSmall(b)}
                           </View>
                           <Ionicons
                             name="chevron-forward"
@@ -1265,8 +1340,8 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {players.map((p) => {
-                      const icon = roleMeta(p.role);
                       const label = (p.name?.trim() || p.email).trim();
+                      const b = getBadgesForUser(p.email, p.role);
 
                       return (
                         <Pressable
@@ -1278,12 +1353,7 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
                             </Text>
-                            <Ionicons
-                              name={icon.name as any}
-                              size={16}
-                              color={icon.color}
-                              style={{ marginLeft: 10 }}
-                            />
+                            {renderBadgesSmall(b)}
                           </View>
                           <Ionicons
                             name="chevron-forward"
@@ -1615,5 +1685,10 @@ const styles = StyleSheet.create({
   teamChipSub: {
     color: COLORS.textSoft,
     fontSize: 11,
+  },
+  badgeRowSmall: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 10,
   },
 });

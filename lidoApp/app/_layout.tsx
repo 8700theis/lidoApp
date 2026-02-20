@@ -35,16 +35,22 @@ export default function RootLayout() {
     const checkWhitelist = async () => {
       if (!session?.user?.email) return;
 
+      const email = session.user.email.toLowerCase();
+
       const { data, error } = await supabase
         .from("allowed_users")
         .select("email")
-        .eq("email", session.user.email.toLowerCase())
+        .eq("email", email)
         .maybeSingle();
 
-      if (error) return;
+      if (error) {
+        console.log("whitelist error:", error.message);
+        // fail-safe: lad brugeren blive i appen hvis vi ikke kan tjekke
+        return;
+      }
 
-      // Hvis ikke whitelisted → log ud
       if (!data) {
+        // her er vi ret sikre: vi kunne læse tabellen, men der er ingen række
         await supabase.auth.signOut();
         router.replace("/login");
       }
