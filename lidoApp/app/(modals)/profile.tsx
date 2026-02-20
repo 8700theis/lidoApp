@@ -39,7 +39,17 @@ export default function ProfileModal() {
 
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [newRole, setNewRole] = useState<Role>("spiller");
+
+  // Roller ved oprettelse
+  const [roleAdmin, setRoleAdmin] = useState(false);
+  const [roleCaptain, setRoleCaptain] = useState(false);
+  // spiller er altid aktiv – vi laver ikke en toggle til den
+  const [rolePlayer] = useState(true);
+  // Holdvalg til kaptajn (max 1)
+  const [selectedCaptainTeamId, setSelectedCaptainTeamId] = useState<string | null>(null);
+  // Holdvalg til spiller (0..n)
+const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([]);
+
   const [creating, setCreating] = useState(false);
 
   // Players list state
@@ -47,7 +57,8 @@ export default function ProfileModal() {
   const [playersLoading, setPlayersLoading] = useState(false);
 
   // Teams list state
-  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [teams, setTeams] = useState<
+  Array<{ id: string; name: string; captain_email: string | null }>>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [creatingTeam, setCreatingTeam] = useState(false);
@@ -57,6 +68,12 @@ export default function ProfileModal() {
   const [teamCaptain, setTeamCaptain] = useState<{ email: string; name: string | null; role: string } | null>(null);
   const [teamPlayers, setTeamPlayers] = useState<Array<{ email: string; name: string | null; role: string }>>([]);
   const [teamLoading, setTeamLoading] = useState(false);
+  const [badges, setBadges] = useState({
+    admin: false,
+    captain: false,
+    player: false,
+  });
+
 
   // Edit player state
   const [selectedPlayer, setSelectedPlayer] = useState<{ email: string; name: string | null; role: string } | null>(null);
@@ -104,9 +121,40 @@ export default function ProfileModal() {
       if (!error) setProfile(data);
       setProfileLoading(false);
     };
-
+    loadTeams();
     run();
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    const loadBadges = async () => {
+      if (!session?.user?.email) return;
+
+      const email = session.user.email.toLowerCase();
+
+      const admin = !!profile?.is_admin;
+
+      const [{ data: captainTeams, error: capErr }, { data: playerRows, error: playerErr }] =
+        await Promise.all([
+          supabase.from("teams").select("id").eq("captain_email", email),
+          supabase.from("team_players").select("team_id").eq("email", email),
+        ]);
+
+      if (capErr || playerErr) {
+        // vi gider ikke larme med fejl her – det er bare badges
+        return;
+      }
+
+      const captain = (captainTeams ?? []).length > 0;
+      const player = (playerRows ?? []).length > 0;
+
+      setBadges({ admin, captain, player });
+    };
+
+    if (!profileLoading) {
+      loadBadges();
+    }
+  }, [profileLoading, profile?.is_admin, session?.user?.email]);
+
 
   useEffect(() => {
     if (mode === "players") {
@@ -157,18 +205,19 @@ export default function ProfileModal() {
     close();
   };
 
-  const effectiveRole: Role = useMemo(() => {
-    if (profile?.is_admin) return "admin";
-    const r = (profile?.role as Role) || "spiller";
-    return r;
-  }, [profile?.is_admin, profile?.role]);
+  const primaryRole: Role = (() => {
+    if (badges.admin) return "admin";
+    if (badges.captain) return "kaptajn";
+    return "spiller";
+  })();
+
 
   const roleIcon = useMemo((): { name: IoniconName; color: string } => {
-    if (effectiveRole === "admin") return { name: "shield-checkmark-outline", color: COLORS.accent };
-    if (effectiveRole === "kaptajn") return { name: "flag-outline", color: "#7FB2FF" };
-    // “dart” vibe: en pil/arrow (Ionicons har ikke dart)
+    if (primaryRole === "admin") return { name: "shield-checkmark-outline", color: COLORS.accent };
+    if (primaryRole === "kaptajn") return { name: "flag-outline", color: "#7FB2FF" };
     return { name: "navigate-outline", color: "#3EE08E" };
-  }, [effectiveRole]);
+  }, [primaryRole]);
+
 
   const roleMeta = (role: string) => {
     const r = (role || "").toLowerCase();
@@ -188,7 +237,10 @@ export default function ProfileModal() {
   const resetCreateForm = () => {
     setNewName("");
     setNewEmail("");
-    setNewRole("spiller");
+    setRoleAdmin(false);
+    setRoleCaptain(false);
+    setSelectedCaptainTeamId(null);
+    setSelectedPlayerTeamIds([]);   // ✅ vigtigt
   };
 
   const createAllowedUser = async () => {
@@ -200,21 +252,68 @@ export default function ProfileModal() {
       return;
     }
 
-    setCreating(true);
-    const { error } = await supabase.rpc("admin_upsert_allowed_user", {
-      p_email: email,
-      p_name: name,
-      p_role: newRole,
-    });
-    setCreating(false);
-
-    if (error) {
-      Alert.alert("Fejl", error.message);
+    // spiller er altid valgt, så vi kræver ikke ekstra her
+    // men kaptajn MÅ ikke vælges uden et hold
+    if (roleCaptain && !selectedCaptainTeamId) {
+      Alert.alert("Mangler", "Vælg et hold til kaptajn, eller slå kaptajn fra.");
       return;
     }
 
-    Alert.alert("Oprettet ✅", `${name} (${newRole}) er nu whitelisted.`);
-    await loadPlayers();
+    // primær rolle (til p_role)
+    const primaryRole: Role = roleAdmin ? "admin" : roleCaptain ? "kaptajn" : "spiller";
+
+    setCreating(true);
+
+    // 1) Opret/whitelist brugeren
+    const { error: userError } = await supabase.rpc("admin_upsert_allowed_user", {
+      p_email: email,
+      p_name: name,
+      p_role: primaryRole,
+    });
+
+    if (userError) {
+      setCreating(false);
+      Alert.alert("Fejl", userError.message);
+      return;
+    }
+
+    // 2) Tilføj som spiller på valgte hold
+    for (const teamId of selectedPlayerTeamIds) {
+      const { error: tpError } = await supabase
+        .from("team_players")
+        .insert({ team_id: teamId, email });
+
+      // Ignorér "duplicate" hvis du kører op igen
+      if (tpError && !tpError.message.toLowerCase().includes("duplicate")) {
+        setCreating(false);
+        Alert.alert("Fejl", tpError.message);
+        return;
+      }
+    }
+
+    // 3) Sæt kaptajn på valgte hold (men IKKE som spiller automatisk)
+    if (roleCaptain && selectedCaptainTeamId) {
+      const { error: capError } = await supabase
+        .from("teams")
+        .update({ captain_email: email })
+        .eq("id", selectedCaptainTeamId);
+
+      if (capError) {
+        setCreating(false);
+        Alert.alert("Fejl", capError.message);
+        return;
+      }
+    }
+
+    setCreating(false);
+
+    Alert.alert(
+      "Oprettet ✅",
+      `${name} er nu oprettet som ${primaryRole}${
+        selectedPlayerTeamIds.length ? " og tilknyttet hold" : ""
+      }.`
+    );
+
     resetCreateForm();
     setMode("main");
   };
@@ -252,7 +351,7 @@ export default function ProfileModal() {
 
     const { data, error } = await supabase
       .from("teams")
-      .select("id,name")
+      .select("id,name,captain_email")
       .order("name", { ascending: true });
 
     setTeamsLoading(false);
@@ -355,105 +454,61 @@ export default function ProfileModal() {
 
 
   const setCaptainForTeam = async (player: { email: string; name: string | null; role: string }) => {
-    if (!selectedTeam) return;
+  if (!selectedTeam) return;
 
-    const email = player.email.toLowerCase();
+  const { error } = await supabase
+    .from("teams")
+    .update({ captain_email: player.email.toLowerCase() })
+    .eq("id", selectedTeam.id);
 
-    // Vi gør 3 ting:
-    // 1) sætte rollen til kaptajn i allowed_users
-    // 2) sætte captains email på team
-    // 3) sikre at kaptajn også er registreret som spiller på holdet
+  if (error) {
+    Alert.alert("Fejl", error.message);
+    return;
+  }
 
-    const updates = [];
+  await loadTeamDetail(selectedTeam.id);
+  setMode("teamDetail");
+};
 
-    // 1) role -> kaptajn
-    updates.push(
-      supabase
-        .from("allowed_users")
-        .update({ role: "kaptajn" })
-        .eq("email", email)
-    );
 
-    // 2) team.captain_email
-    updates.push(
-      supabase
-        .from("teams")
-        .update({ captain_email: email })
-        .eq("id", selectedTeam.id)
-    );
+const clearCaptainForTeam = async () => {
+  if (!selectedTeam || !teamCaptain) return;
 
-    // 3) tilføj til team_players (on conflict ignored via primary key)
-    updates.push(
-      supabase
-        .from("team_players")
-        .insert({ team_id: selectedTeam.id, email })
-        .catch(() => {})
-    );
+  // Vi rører IKKE ved allowed_users.role her – kaptajn er nu kun pr. hold
+  const { error } = await supabase
+    .from("teams")
+    .update({ captain_email: null })
+    .eq("id", selectedTeam.id);
 
-    const results = await Promise.allSettled(updates);
-    const failed = results.find((r) => r.status === "rejected");
+  if (error) {
+    Alert.alert("Fejl", error.message);
+    return;
+  }
 
-    if (failed) {
-      Alert.alert("Fejl", "Kunne ikke opdatere kaptajn.");
+  await loadTeamDetail(selectedTeam.id);
+};
+
+
+const addPlayerToTeam = async (player: { email: string; name: string | null; role: string }) => {
+  if (!selectedTeam) return;
+
+  const email = player.email.toLowerCase();
+
+  const { error } = await supabase
+    .from("team_players")
+    .insert({ team_id: selectedTeam.id, email });
+
+  if (error) {
+    // hvis det allerede findes pga primary key, er det ikke en katastrofe
+    if (!error.message.includes("duplicate key")) {
+      Alert.alert("Fejl", error.message);
       return;
     }
+  }
 
-    // Reload detail
-    await loadTeamDetail(selectedTeam.id);
-    setMode("teamDetail");
-  };
-
-  const clearCaptainForTeam = async () => {
-    if (!selectedTeam || !teamCaptain) return;
-
-    const email = teamCaptain.email.toLowerCase();
-
-    // 1) sæt rolle tilbage til "spiller" (hvis du vil være helt fancy kan vi
-    // senere tjekke om de er kaptajn for andre hold først)
-    const { error: roleError } = await supabase
-      .from("allowed_users")
-      .update({ role: "spiller" })
-      .eq("email", email);
-
-    if (roleError) {
-      Alert.alert("Fejl", roleError.message);
-      return;
-    }
-
-    // 2) fjern captain_email fra holdet
-    const { error: teamError } = await supabase
-      .from("teams")
-      .update({ captain_email: null })
-      .eq("id", selectedTeam.id);
-
-    if (teamError) {
-      Alert.alert("Fejl", teamError.message);
-      return;
-    }
-
-    await loadTeamDetail(selectedTeam.id);
-  };
-
-  const addPlayerToTeam = async (player: { email: string; name: string | null; role: string }) => {
-    if (!selectedTeam) return;
-
-    const email = player.email.toLowerCase();
-
-    const { error } = await supabase
-      .from("team_players")
-      .insert({ team_id: selectedTeam.id, email });
-
-    if (error) {
-      // hvis det allerede findes pga primary key, er det ikke en katastrofe
-      if (!error.message.includes("duplicate key")) {
-        Alert.alert("Fejl", error.message);
-        return;
-      }
-    }
-
-    await loadTeamDetail(selectedTeam.id);
-    setMode("teamDetail");
-  };
+  await loadTeamDetail(selectedTeam.id);
+  setMode("teamDetail");
+};
 
 
 
@@ -498,26 +553,60 @@ export default function ProfileModal() {
 
     Alert.alert(
       "Slet spiller?",
-      `Er du sikker på at du vil fjerne "${selectedPlayer.name ?? selectedPlayer.email}" fra whitelisten?`,
+      `Er du sikker på at du vil fjerne "${selectedPlayer.name ?? selectedPlayer.email}" fra systemet?`,
       [
         { text: "Annuller", style: "cancel" },
         {
           text: "Slet",
           style: "destructive",
           onPress: async () => {
-            setDeleting(true);
-            const { error } = await supabase.rpc("admin_delete_allowed_user", {
-              p_email: selectedPlayer.email,
-            });
-            setDeleting(false);
+            const email = selectedPlayer.email.toLowerCase();
 
-            if (error) {
-              Alert.alert("Fejl", error.message);
+            setDeleting(true);
+
+            // 1) Fjern som spiller på ALLE hold
+            const { error: tpErr } = await supabase
+              .from("team_players")
+              .delete()
+              .eq("email", email);
+
+            if (tpErr) {
+              setDeleting(false);
+              Alert.alert("Fejl", tpErr.message);
               return;
             }
 
-            Alert.alert("Slettet ✅", "Spilleren er fjernet fra whitelisten.");
-            await loadPlayers();
+            // 2) Nulstil kaptajn på alle hold hvor personen er kaptajn
+            const { error: capErr } = await supabase
+              .from("teams")
+              .update({ captain_email: null })
+              .eq("captain_email", email);
+
+            if (capErr) {
+              setDeleting(false);
+              Alert.alert("Fejl", capErr.message);
+              return;
+            }
+
+            // 3) Kald din eksisterende RPC til at fjerne fra allowed_users (+ evt. auth)
+            const { error: delErr } = await supabase.rpc("admin_delete_allowed_user", {
+              p_email: selectedPlayer.email,
+            });
+
+            setDeleting(false);
+
+            if (delErr) {
+              Alert.alert("Fejl", delErr.message);
+              return;
+            }
+
+            Alert.alert("Slettet ✅", "Spilleren er fjernet fra whitelisten og alle hold.");
+
+            await Promise.all([
+              loadPlayers(),
+              loadTeams(), // så kaptajn-info / holdene også er friske
+            ]);
+
             setSelectedPlayer(null);
             setMode("players");
           },
@@ -568,16 +657,37 @@ export default function ProfileModal() {
 
                 {!profileLoading && (
                   <View style={styles.roleBadge}>
-                    <Ionicons
-                      name={roleIcon.name}
-                      size={14}
-                      color={roleIcon.color}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text style={styles.roleBadgeText}>{effectiveRole}</Text>
+                    {badges.admin && (
+                      <Ionicons
+                        name="shield-checkmark-outline"
+                        size={12}
+                        color={COLORS.accent}
+                        style={{ marginRight: 4 }}
+                      />
+                    )}
+                    {badges.captain && (
+                      <Ionicons
+                        name="flag-outline"
+                        size={12}
+                        color="#7FB2FF"
+                        style={{ marginRight: 4 }}
+                      />
+                    )}
+                    {badges.player && (
+                      <Ionicons
+                        name="navigate-outline"
+                        size={12}
+                        color="#3EE08E"
+                        style={{ marginRight: 6 }}
+                      />
+                    )}
+
+                    {/* Teksten er kun den “højeste” rolle */}
+                    <Text style={styles.roleBadgeText}>{primaryRole}</Text>
                   </View>
                 )}
               </View>
+
 
               <Text style={styles.subtitle} numberOfLines={1} ellipsizeMode="tail">
                 {session?.user?.email ?? ""}
@@ -642,10 +752,12 @@ export default function ProfileModal() {
             </>
           ) : mode === "create" ? (
             <>
-              {/* ✅ Create view – header forbliver profil-headeren, og "Opret spiller" bliver en overskrift hernede */}
+              {/* Header-tekst under profil-headeren */}
               <Text style={styles.sectionTitle}>Opret spiller</Text>
 
-              <View style={{ gap: 10 }}>
+              {/* Alt indhold over knapperne */}
+              <View style={{ flex: 1, gap: 10 }}>
+                {/* Navn */}
                 <View style={styles.inputWrap}>
                   <Text style={styles.inputLabel}>Navn</Text>
                   <TextInput
@@ -658,6 +770,7 @@ export default function ProfileModal() {
                   />
                 </View>
 
+                {/* Email */}
                 <View style={styles.inputWrap}>
                   <Text style={styles.inputLabel}>Email</Text>
                   <TextInput
@@ -671,36 +784,153 @@ export default function ProfileModal() {
                   />
                 </View>
 
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Rolle</Text>
+                {/* ↓↓↓ Kun denne del er scrollable ↓↓↓ */}
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={{
+                    gap: 10,
+                    paddingBottom: 12, // lidt luft til knapperne
+                  }}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {/* Rolle */}
+                  <View style={styles.inputWrap}>
+                    <Text style={styles.inputLabel}>Rolle</Text>
 
-                  <View style={styles.rolePicker}>
-                    {ROLES.map((r) => (
+                    <View style={styles.rolePicker}>
+                      {/* admin – toggle */}
                       <Pressable
-                        key={r}
-                        onPress={() => setNewRole(r)}
-                        style={[styles.roleChip, newRole === r && styles.roleChipActive]}
+                        onPress={() => setRoleAdmin((v) => !v)}
+                        style={[styles.roleChip, roleAdmin && styles.roleChipActive]}
                       >
                         <Text
-                          style={[styles.roleChipText, newRole === r && styles.roleChipTextActive]}
+                          style={[
+                            styles.roleChipText,
+                            roleAdmin && styles.roleChipTextActive,
+                          ]}
                         >
-                          {r}
+                          admin
                         </Text>
                       </Pressable>
-                    ))}
+
+                      {/* kaptajn – toggle */}
+                      <Pressable
+                        onPress={() => setRoleCaptain((v) => !v)}
+                        style={[styles.roleChip, roleCaptain && styles.roleChipActive]}
+                      >
+                        <Text
+                          style={[
+                            styles.roleChipText,
+                            roleCaptain && styles.roleChipTextActive,
+                          ]}
+                        >
+                          kaptajn
+                        </Text>
+                      </Pressable>
+
+                      {/* spiller – altid aktiv */}
+                      <Pressable style={[styles.roleChip, styles.roleChipActive]}>
+                        <Text
+                          style={[
+                            styles.roleChipText,
+                            styles.roleChipTextActive,
+                          ]}
+                        >
+                          spiller
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
-                </View>
+
+                  {/* Kaptajn-hold */}
+                  {roleCaptain && (
+                    <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                      <Text style={styles.inputLabel}>Vælg hold til kaptajn</Text>
+
+                      {teams.length === 0 ? (
+                        <Text style={styles.helpText}>Ingen hold endnu.</Text>
+                      ) : (
+                        <View style={{ gap: 8 }}>
+                          {teams.map((t) => {
+                            const isSelected = selectedCaptainTeamId === t.id;
+                            const hasCaptain = !!t.captain_email;
+
+                            return (
+                              <Pressable
+                                key={t.id}
+                                onPress={() => setSelectedCaptainTeamId(t.id)}
+                                style={[
+                                  styles.teamChip,
+                                  isSelected && styles.teamChipActive,
+                                ]}
+                              >
+                                <View
+                                  style={{
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                  }}
+                                >
+                                  <Text style={styles.teamChipText}>{t.name}</Text>
+                                  <Text style={styles.teamChipSub}>
+                                    {hasCaptain ? "Har kaptajn" : "Ingen kaptajn"}
+                                  </Text>
+                                </View>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Spiller-hold */}
+                  <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                    <Text style={styles.inputLabel}>Hold som spiller</Text>
+
+                    {teams.length === 0 ? (
+                      <Text style={styles.helpText}>Ingen hold endnu.</Text>
+                    ) : (
+                      <View style={{ gap: 8 }}>
+                        {teams.map((t) => {
+                          const isSelected = selectedPlayerTeamIds.includes(t.id); // ✅ ens state
+
+                          return (
+                            <Pressable
+                              key={t.id}
+                              onPress={() =>
+                                setSelectedPlayerTeamIds((prev) =>
+                                  prev.includes(t.id)
+                                    ? prev.filter((id) => id !== t.id) // fjern
+                                    : [...prev, t.id]                  // tilføj
+                                )
+                              }
+                              style={[
+                                styles.teamChip,
+                                isSelected && styles.teamChipActive,
+                              ]}
+                            >
+                              <Text style={styles.teamChipText}>{t.name}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                </ScrollView>
+                {/* ↑↑↑ Kun denne del scroller ↑↑↑ */}
               </View>
 
-              <View style={{ flex: 1 }} />
-
+              {/* Knapperne står fast i bunden */}
               <Pressable
                 onPress={createAllowedUser}
                 disabled={creating}
                 style={[styles.primaryButton, creating && { opacity: 0.7 }]}
               >
                 <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.bg} />
-                <Text style={styles.primaryButtonText}>{creating ? "Opretter..." : "Opret"}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {creating ? "Opretter..." : "Opret"}
+                </Text>
               </Pressable>
 
               <Pressable
@@ -1366,5 +1596,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-
+  teamChip: {
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  teamChipActive: {
+    backgroundColor: "rgba(245,197,66,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.40)",
+  },
+  teamChipText: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  teamChipSub: {
+    color: COLORS.textSoft,
+    fontSize: 11,
+  },
 });
