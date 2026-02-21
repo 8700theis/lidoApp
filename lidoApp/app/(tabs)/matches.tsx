@@ -1,4 +1,5 @@
 // app/(tabs)/matches.tsx
+import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -219,6 +220,13 @@ export default function MatchesScreen() {
     return COLORS.textSoft;
   };
 
+    const openMatch = (match: MatchRow) => {
+        router.push({
+        pathname: "../match/[id]",
+        params: { id: match.id },
+        });
+    };
+
   // ---------- RENDER ----------
 
   return (
@@ -339,7 +347,11 @@ export default function MatchesScreen() {
                 const place = m.is_home ? "Hjemme" : "Ude";
 
                 return (
-                  <View key={m.id} style={styles.matchCard}>
+                  <Pressable
+                    key={m.id}
+                    style={styles.matchCard}
+                    onPress={() => openMatch(m)}
+                    >
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                       <View>
                         <Text style={styles.matchTime}>{timeStr}</Text>
@@ -382,7 +394,7 @@ export default function MatchesScreen() {
                         </Text>
                       </View>
                     ) : null}
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
