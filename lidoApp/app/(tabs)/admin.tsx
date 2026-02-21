@@ -51,6 +51,12 @@ export default function AdminMatchesScreen() {
   const [editOpponent, setEditOpponent] = useState("");
   const [editNote, setEditNote] = useState("");
 
+    const [editIsHome, setEditIsHome] = useState(true);
+    const [editType, setEditType] = useState("");
+    const [editStatus, setEditStatus] = useState<"planned" | "played" | "cancelled">(
+    "planned"
+    );
+
   // 1) Tjek om user er admin (via profiles.is_admin)
   useEffect(() => {
     const loadAdminFlag = async () => {
@@ -123,12 +129,20 @@ export default function AdminMatchesScreen() {
   }, [isAdmin]);
 
   // Når man vælger en kamp → sync edit-felterne
-  useEffect(() => {
+    useEffect(() => {
     if (!selected) return;
+
     setEditLeague(selected.league ?? "");
     setEditOpponent(selected.opponent ?? "");
     setEditNote(selected.notes ?? "");
-  }, [selected]);
+
+    // ⭐ nye felter
+    setEditIsHome(selected.is_home);
+    setEditType(selected.match_type ?? "");
+    // fallback hvis status er tom / noget andet
+    const s = (selected.status || "planned") as "planned" | "played" | "cancelled";
+    setEditStatus(s);
+    }, [selected]);
 
     const formatStart = (iso: string) => {
     if (!iso) return "";
@@ -144,48 +158,62 @@ export default function AdminMatchesScreen() {
     return `${day}.${month}.${year} · ${hours}:${minutes}`;
     };
 
-  const saveChanges = async () => {
+    const saveChanges = async () => {
     if (!selected) return;
 
     const opponent = editOpponent.trim();
     if (!opponent) {
-      Alert.alert("Mangler", "Modstander må ikke være tom.");
-      return;
+        Alert.alert("Mangler", "Modstander må ikke være tom.");
+        return;
     }
+
+    const league = editLeague.trim() || null;
+    const notes = editNote.trim() || null;
+    const match_type = editType.trim() || null;
+    const status = editStatus; // already en af de tre
 
     setSaving(true);
     const { error } = await supabase
-      .from("matches")
-      .update({
-        league: editLeague.trim() || null,
+        .from("matches")
+        .update({
+        league,
         opponent,
-        notes: editNote.trim() || null,
-      })
-      .eq("id", selected.id);
+        notes,
+        match_type,
+        status,
+        is_home: editIsHome,
+        })
+        .eq("id", selected.id);
 
     setSaving(false);
 
     if (error) {
-      Alert.alert("Fejl", error.message);
-      return;
+        Alert.alert("Fejl", error.message);
+        return;
     }
 
     // Opdatér lokalt
     setMatches((prev) =>
-      prev.map((m) =>
+        prev.map((m) =>
         m.id === selected.id
-          ? {
-              ...m,
-              league: editLeague.trim() || null,
-              opponent,
-              notes: editNote.trim() || null,
+            ? {
+                ...m,
+                league,
+                opponent,
+                notes,
+                match_type,
+                status,
+                is_home: editIsHome,
             }
-          : m
-      )
+            : m
+        )
     );
 
     Alert.alert("Gemt ✅", "Kampen er opdateret.");
-  };
+
+    // ⭐ luk redigeringen efter gem
+    setSelected(null);
+    };
 
   const deleteMatch = async () => {
     if (!selected) return;
@@ -312,63 +340,189 @@ export default function AdminMatchesScreen() {
 
         {/* Edit-panel i bunden, hvis kamp valgt */}
         {selected && (
-          <View style={styles.editPanel}>
+        <View style={styles.editPanel}>
             <Text style={styles.editTitle}>Rediger kamp</Text>
 
+            {/* Lille meta-linje med hold + dato/tid */}
+            <Text style={styles.editMeta}>
+            {selected.team_name} · {formatStart(selected.start_at)}
+            </Text>
+
+            {/* Selve felterne gøres scrollbare */}
+            <ScrollView
+            style={{ maxHeight: 260 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            showsVerticalScrollIndicator={false}
+            >
+            {/* Liga */}
             <Text style={styles.editLabel}>Liga</Text>
             <TextInputLike
-              value={editLeague}
-              onChangeText={setEditLeague}
-              placeholder="Fx Serie 3"
+                value={editLeague}
+                onChangeText={setEditLeague}
+                placeholder="Fx Serie 3"
             />
 
+            {/* Modstander */}
             <Text style={styles.editLabel}>Modstander</Text>
             <TextInputLike
-              value={editOpponent}
-              onChangeText={setEditOpponent}
-              placeholder="Fx BK Frem"
+                value={editOpponent}
+                onChangeText={setEditOpponent}
+                placeholder="Fx BK Frem"
             />
 
+            {/* Bane (hjemme/ude) */}
+            <Text style={styles.editLabel}>Bane</Text>
+            <View style={styles.chipRow}>
+                <Pressable
+                onPress={() => setEditIsHome(true)}
+                style={[
+                    styles.chip,
+                    editIsHome && styles.chipActive,
+                ]}
+                >
+                <Text
+                    style={[
+                    styles.chipText,
+                    editIsHome && styles.chipTextActive,
+                    ]}
+                >
+                    Hjemme
+                </Text>
+                </Pressable>
+
+                <Pressable
+                onPress={() => setEditIsHome(false)}
+                style={[
+                    styles.chip,
+                    !editIsHome && styles.chipActive,
+                ]}
+                >
+                <Text
+                    style={[
+                    styles.chipText,
+                    !editIsHome && styles.chipTextActive,
+                    ]}
+                >
+                    Ude
+                </Text>
+                </Pressable>
+            </View>
+
+            {/* Type */}
+            <Text style={styles.editLabel}>Type</Text>
+            <TextInputLike
+                value={editType}
+                onChangeText={setEditType}
+                placeholder="Fx Træningskamp, Turnering"
+            />
+
+            {/* Status */}
+            <Text style={styles.editLabel}>Status</Text>
+            <View style={styles.chipRow}>
+                <Pressable
+                onPress={() => setEditStatus("planned")}
+                style={[
+                    styles.chip,
+                    editStatus === "planned" && styles.chipActive,
+                ]}
+                >
+                <Text
+                    style={[
+                    styles.chipText,
+                    editStatus === "planned" && styles.chipTextActive,
+                    ]}
+                >
+                    Planlagt
+                </Text>
+                </Pressable>
+
+                <Pressable
+                onPress={() => setEditStatus("played")}
+                style={[
+                    styles.chip,
+                    editStatus === "played" && styles.chipActive,
+                ]}
+                >
+                <Text
+                    style={[
+                    styles.chipText,
+                    editStatus === "played" && styles.chipTextActive,
+                    ]}
+                >
+                    Spillet
+                </Text>
+                </Pressable>
+
+                <Pressable
+                onPress={() => setEditStatus("cancelled")}
+                style={[
+                    styles.chip,
+                    editStatus === "cancelled" && styles.chipActive,
+                ]}
+                >
+                <Text
+                    style={[
+                    styles.chipText,
+                    editStatus === "cancelled" && styles.chipTextActive,
+                    ]}
+                >
+                    Aflyst
+                </Text>
+                </Pressable>
+            </View>
+
+            {/* Note */}
             <Text style={styles.editLabel}>Note</Text>
             <TextInputLike
-              value={editNote}
-              onChangeText={setEditNote}
-              placeholder="Ekstra info til kampen"
-              multiline
+                value={editNote}
+                onChangeText={setEditNote}
+                placeholder="Ekstra info til kampen"
+                multiline
             />
+            </ScrollView>
 
+            {/* Knapperne står fast under scrolleren */}
             <View style={{ marginTop: 12, gap: 8 }}>
-              <Pressable
+            <Pressable
                 onPress={saveChanges}
                 disabled={saving || deleting}
                 style={[
-                  styles.primaryButton,
-                  (saving || deleting) && { opacity: 0.7 },
+                styles.primaryButton,
+                (saving || deleting) && { opacity: 0.7 },
                 ]}
-              >
+            >
                 {saving ? (
-                  <ActivityIndicator size="small" color={COLORS.bg} />
+                <ActivityIndicator size="small" color={COLORS.bg} />
                 ) : (
-                  <Text style={styles.primaryButtonText}>Gem ændringer</Text>
+                <Text style={styles.primaryButtonText}>Gem ændringer</Text>
                 )}
-              </Pressable>
+            </Pressable>
 
-              <Pressable
+            <Pressable
                 onPress={deleteMatch}
                 disabled={saving || deleting}
                 style={[
-                  styles.dangerButton,
-                  (saving || deleting) && { opacity: 0.7 },
+                styles.dangerButton,
+                (saving || deleting) && { opacity: 0.7 },
                 ]}
-              >
+            >
                 {deleting ? (
-                  <ActivityIndicator size="small" color={COLORS.text} />
+                <ActivityIndicator size="small" color={COLORS.text} />
                 ) : (
-                  <Text style={styles.dangerButtonText}>Slet kamp</Text>
+                <Text style={styles.dangerButtonText}>Slet kamp</Text>
                 )}
-              </Pressable>
+            </Pressable>
+
+            {/* ⭐ Luk uden at gemme */}
+            <Pressable
+                onPress={() => setSelected(null)}
+                disabled={saving || deleting}
+                style={styles.secondaryButton}
+            >
+                <Text style={styles.secondaryButtonText}>Luk uden at gemme</Text>
+            </Pressable>
             </View>
-          </View>
+        </View>
         )}
       </View>
     </View>
@@ -526,5 +680,47 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "700",
+  },
+    editMeta: {
+    color: COLORS.textSoft,
+    fontSize: 12,
+    marginBottom: 6,
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+    flexWrap: "wrap",
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  chipActive: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.40)",
+  },
+  chipText: {
+    color: COLORS.textSoft,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  chipTextActive: {
+    color: COLORS.text,
+  },
+  secondaryButton: {
+    borderRadius: 14,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  secondaryButtonText: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
