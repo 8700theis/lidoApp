@@ -1,12 +1,16 @@
-import { useMemo, useState } from "react";
+// app/(tabs)/matches.tsx
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
+  ScrollView,
   Pressable,
-  FlatList,
+  ActivityIndicator,
 } from "react-native";
+import { useSession } from "../../hooks/useSession";
+import { supabase } from "../../lib/supabase";
+import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
   bg: "#0B0F14",
@@ -14,176 +18,233 @@ const COLORS = {
   text: "#F2F5F7",
   textSoft: "#B7C0C8",
   accent: "#F5C542",
+  chipBg: "rgba(255,255,255,0.06)",
+  chipBgActive: "rgba(245,197,66,0.18)",
 };
 
-type MatchStatus = "planned" | "played" | "cancelled";
-
-type Match = {
+type MatchRow = {
   id: string;
-  teamId: string;
-  teamName: string;
+  team_id: string;
+  start_at: string;
+  is_home: boolean;
+  league: string | null;
   opponent: string;
-  startTime: string; // ISO
-  location: string;
-  type: "league" | "cup" | "friendly";
-  status: MatchStatus;
+  match_type: string | null;
+  status: string; // 'planned' | 'played' | 'cancelled' etc.
+  notes: string | null;
 };
 
-type MyTeam = { id: string; name: string };
+type UserTeam = {
+  id: string;
+  name: string;
+};
 
-// 🔹 Dummy: mine hold
-const MY_TEAMS: MyTeam[] = [
-  { id: "lido1", name: "Lido 1" },
-  { id: "lido2", name: "Lido 2" },
-];
-
-// 🔹 Dummy: kampe hvor jeg er udtaget
-const DUMMY_MATCHES: Match[] = [
-  {
-    id: "m1",
-    teamId: "lido1",
-    teamName: "Lido 1",
-    opponent: "Hvidovre",
-    startTime: "2025-03-21T18:30:00Z",
-    location: "Lido Hallen",
-    type: "league",
-    status: "planned",
-  },
-  {
-    id: "m2",
-    teamId: "lido1",
-    teamName: "Lido 1",
-    opponent: "Køge",
-    startTime: "2025-03-10T18:30:00Z",
-    location: "Ude",
-    type: "friendly",
-    status: "played",
-  },
-  {
-    id: "m3",
-    teamId: "lido2",
-    teamName: "Lido 2",
-    opponent: "Brøndby",
-    startTime: "2025-03-25T20:00:00Z",
-    location: "Lido Hallen",
-    type: "league",
-    status: "planned",
-  },
-];
-
-type Mode = "upcoming" | "all";
+type TimeFilter = "upcoming" | "all";
 
 export default function MatchesScreen() {
-  const [mode, setMode] = useState<Mode>("upcoming");
-  const [selectedTeamId, setSelectedTeamId] = useState<string | "all">("all");
+  const { session } = useSession();
+  const [loading, setLoading] = useState(true);
+  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [teams, setTeams] = useState<UserTeam[]>([]);
 
-  const now = new Date();
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("upcoming");
+  const [teamFilter, setTeamFilter] = useState<string | "all">("all");
 
-  const filteredMatches = useMemo(() => {
-    return DUMMY_MATCHES.filter((m) => {
-      if (mode === "upcoming") {
-        const date = new Date(m.startTime);
-        if (date < now) return false;
+  // ---------- DATA LOAD ----------
+
+  useEffect(() => {
+    const load = async () => {
+      if (!session?.user?.email) {
+        setMatches([]);
+        setTeams([]);
+        setLoading(false);
+        return;
       }
 
-      if (selectedTeamId !== "all" && m.teamId !== selectedTeamId) {
-        return false;
+      setLoading(true);
+      const email = session.user.email.toLowerCase();
+
+      // 1) Find alle hold brugeren er på (kaptajn eller spiller)
+      const [{ data: captainTeams, error: capErr }, { data: playerLinks, error: plErr }] =
+        await Promise.all([
+          supabase
+            .from("teams")
+            .select("id,name")
+            .eq("captain_email", email),
+          supabase
+            .from("team_players")
+            .select("team_id")
+            .eq("email", email),
+        ]);
+
+      if (capErr || plErr) {
+        console.error(capErr || plErr);
+        setLoading(false);
+        return;
       }
 
-      return true;
-    }).sort(
-      (a, b) =>
-        new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-    );
-  }, [mode, selectedTeamId, now]);
+      const playerTeamIds = (playerLinks ?? []).map((l) => l.team_id as string);
+      const allTeamIds = Array.from(
+        new Set<string>([
+          ...(captainTeams ?? []).map((t) => t.id as string),
+          ...playerTeamIds,
+        ])
+      );
 
-  const sections = useMemo(() => {
-    const result: { dateLabel: string; items: Match[] }[] = [];
-
-    for (const match of filteredMatches) {
-      const d = new Date(match.startTime);
-      const dateLabel = d.toLocaleDateString("da-DK", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      });
-
-      const existing = result.find((s) => s.dateLabel === dateLabel);
-      if (existing) {
-        existing.items.push(match);
-      } else {
-        result.push({ dateLabel, items: [match] });
+      if (allTeamIds.length === 0) {
+        setTeams([]);
+        setMatches([]);
+        setLoading(false);
+        return;
       }
+
+      // 2) Hent hold-navne (unik liste)
+      const { data: teamRows, error: teamErr } = await supabase
+        .from("teams")
+        .select("id,name")
+        .in("id", allTeamIds);
+
+      if (teamErr) {
+        console.error(teamErr);
+        setLoading(false);
+        return;
+      }
+
+      const uniqTeams: UserTeam[] = Array.from(
+        new Map(
+          (teamRows ?? []).map((t) => [t.id as string, { id: t.id as string, name: t.name as string }])
+        ).values()
+      ).sort((a, b) => a.name.localeCompare(b.name, "da"));
+
+      setTeams(uniqTeams);
+
+      // 3) Hent kampe for de hold
+      const { data: matchRows, error: matchErr } = await supabase
+        .from("matches")
+        .select(
+          "id,team_id,start_at,is_home,league,opponent,match_type,status,notes"
+        )
+        .in("team_id", allTeamIds)
+        .order("start_at", { ascending: true });
+
+      if (matchErr) {
+        console.error(matchErr);
+        setLoading(false);
+        return;
+      }
+
+      setMatches((matchRows ?? []) as MatchRow[]);
+      setLoading(false);
+    };
+
+    load();
+  }, [session?.user?.email]);
+
+  // ---------- FILTERED / GROUPED DATA ----------
+
+  const filteredGroups = useMemo(() => {
+    const now = new Date();
+
+    let filtered = matches.slice();
+
+    // Kommmende vs alle
+    if (timeFilter === "upcoming") {
+      filtered = filtered.filter((m) => new Date(m.start_at) >= now);
     }
 
-    return result;
-  }, [filteredMatches]);
+    // Filter på hold
+    if (teamFilter !== "all") {
+      filtered = filtered.filter((m) => m.team_id === teamFilter);
+    }
 
-  const renderMatchCard = (match: Match) => {
-    const d = new Date(match.startTime);
-    const timeLabel = d.toLocaleTimeString("da-DK", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const typeLabel =
-      match.type === "league"
-        ? "Turnering"
-        : match.type === "cup"
-        ? "Cup"
-        : "Træningskamp";
-
-    return (
-      <View style={styles.matchCard}>
-        <View style={styles.matchHeaderRow}>
-          <Text style={styles.matchTime}>{timeLabel}</Text>
-          <View style={styles.matchTypeBadge}>
-            <Text style={styles.matchTypeText}>{typeLabel}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.matchTeams} numberOfLines={1}>
-          {match.teamName} vs {match.opponent}
-        </Text>
-
-        <View style={styles.matchFooterRow}>
-          <Text style={styles.matchLocation}>{match.location}</Text>
-
-          {match.status === "played" && (
-            <Text style={styles.matchStatusPlayed}>Spillet</Text>
-          )}
-          {match.status === "cancelled" && (
-            <Text style={styles.matchStatusCancelled}>Aflyst</Text>
-          )}
-        </View>
-      </View>
+    // Sorter for en sikkerheds skyld
+    filtered.sort(
+      (a, b) =>
+        new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
     );
+
+    // Gruppér på dato (YYYY-MM-DD)
+    const groups: {
+      [dateKey: string]: {
+        date: Date;
+        items: MatchRow[];
+      };
+    } = {};
+
+    for (const m of filtered) {
+      const d = new Date(m.start_at);
+      const key = d.toISOString().slice(0, 10); // yyyy-mm-dd
+
+      if (!groups[key]) {
+        groups[key] = { date: d, items: [] };
+      }
+      groups[key].items.push(m);
+    }
+
+    // Til array, sorteret efter dato
+    return Object.values(groups).sort(
+      (a, b) => a.date.getTime() - b.date.getTime()
+    );
+  }, [matches, timeFilter, teamFilter]);
+
+  const formatDateHeader = (d: Date) => {
+    // f.eks. "man. 10. mar."
+    return new Intl.DateTimeFormat("da-DK", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(d);
   };
 
+  const formatTime = (d: Date) =>
+    new Intl.DateTimeFormat("da-DK", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(d);
+
+  const getTeamName = (teamId: string) =>
+    teams.find((t) => t.id === teamId)?.name ?? "Ukendt hold";
+
+  const statusLabel = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === "played") return "Spillet";
+    if (s === "cancelled") return "Aflyst";
+    return "Planlagt";
+  };
+
+  const statusColor = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === "played") return "#3EE08E";
+    if (s === "cancelled") return "#FF5252";
+    return COLORS.textSoft;
+  };
+
+  // ---------- RENDER ----------
+
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.root}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Mine kampe</Text>
-          <Text style={styles.subtitle}>
+    <View style={styles.root}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Top title */}
+        <View style={styles.pageHeader}>
+          <Text style={styles.pageTitle}>Mine kampe</Text>
+          <Text style={styles.pageSubtitle}>
             Overblik over de kampe du er sat på
           </Text>
         </View>
 
-        {/* Mode toggle */}
+        {/* Filter: kommende / alle */}
         <View style={styles.toggleRow}>
           <Pressable
-            onPress={() => setMode("upcoming")}
+            onPress={() => setTimeFilter("upcoming")}
             style={[
               styles.toggleChip,
-              mode === "upcoming" && styles.toggleChipActive,
+              timeFilter === "upcoming" && styles.toggleChipActive,
             ]}
           >
             <Text
               style={[
                 styles.toggleChipText,
-                mode === "upcoming" && styles.toggleChipTextActive,
+                timeFilter === "upcoming" && styles.toggleChipTextActive,
               ]}
             >
               Kommende
@@ -191,16 +252,16 @@ export default function MatchesScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() => setMode("all")}
+            onPress={() => setTimeFilter("all")}
             style={[
               styles.toggleChip,
-              mode === "all" && styles.toggleChipActive,
+              timeFilter === "all" && styles.toggleChipActive,
             ]}
           >
             <Text
               style={[
                 styles.toggleChipText,
-                mode === "all" && styles.toggleChipTextActive,
+                timeFilter === "all" && styles.toggleChipTextActive,
               ]}
             >
               Alle
@@ -208,223 +269,264 @@ export default function MatchesScreen() {
           </Pressable>
         </View>
 
-        {/* Team filter */}
-        <View style={styles.teamFilterRow}>
+        {/* Filter: hold */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.teamChipsRow}
+        >
           <Pressable
-            onPress={() => setSelectedTeamId("all")}
+            onPress={() => setTeamFilter("all")}
             style={[
               styles.teamChip,
-              selectedTeamId === "all" && styles.teamChipActive,
+              teamFilter === "all" && styles.teamChipActive,
             ]}
           >
             <Text
               style={[
                 styles.teamChipText,
-                selectedTeamId === "all" && styles.teamChipTextActive,
+                teamFilter === "all" && styles.teamChipTextActive,
               ]}
             >
               Alle hold
             </Text>
           </Pressable>
 
-          {MY_TEAMS.map((t) => (
+          {teams.map((t) => (
             <Pressable
               key={t.id}
-              onPress={() => setSelectedTeamId(t.id)}
+              onPress={() => setTeamFilter(t.id)}
               style={[
                 styles.teamChip,
-                selectedTeamId === t.id && styles.teamChipActive,
+                teamFilter === t.id && styles.teamChipActive,
               ]}
             >
               <Text
                 style={[
                   styles.teamChipText,
-                  selectedTeamId === t.id && styles.teamChipTextActive,
+                  teamFilter === t.id && styles.teamChipTextActive,
                 ]}
               >
                 {t.name}
               </Text>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
 
-        {/* Liste */}
-        {sections.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Ingen kampe at vise</Text>
-            <Text style={styles.emptyText}>
-              Skift filter eller spørg din træner, hvis du mangler kampe her.
-            </Text>
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="small" color={COLORS.textSoft} />
+            <Text style={styles.helpText}>Henter kampe...</Text>
           </View>
+        ) : filteredGroups.length === 0 ? (
+          <Text style={styles.helpText}>
+            Ingen kampe at vise endnu. Når klubben opretter kampe for dine
+            hold, dukker de op her.
+          </Text>
         ) : (
-          <FlatList
-            data={sections}
-            keyExtractor={(s) => s.dateLabel}
-            contentContainerStyle={{ paddingBottom: 20 }}
-            renderItem={({ item }) => (
-              <View style={styles.section}>
-                <Text style={styles.sectionLabel}>{item.dateLabel}</Text>
-                <View style={{ gap: 10 }}>
-                  {item.items.map((m) => (
-                    <View key={m.id}>{renderMatchCard(m)}</View>
-                  ))}
-                </View>
-              </View>
-            )}
-          />
+          filteredGroups.map((group) => (
+            <View key={group.date.toISOString()} style={{ marginTop: 18 }}>
+              <Text style={styles.dateHeader}>
+                {formatDateHeader(group.date)}
+              </Text>
+
+              {group.items.map((m) => {
+                const d = new Date(m.start_at);
+                const timeStr = formatTime(d);
+                const teamName = getTeamName(m.team_id);
+
+                const title = `${teamName} vs ${m.opponent}`;
+                const place = m.is_home ? "Hjemme" : "Ude";
+
+                return (
+                  <View key={m.id} style={styles.matchCard}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                      <View>
+                        <Text style={styles.matchTime}>{timeStr}</Text>
+                        <Text style={styles.matchTitle} numberOfLines={1}>
+                          {title}
+                        </Text>
+                        <Text style={styles.matchSub}>{place}</Text>
+                      </View>
+
+                      <View style={{ alignItems: "flex-end" }}>
+                        {m.match_type ? (
+                          <View style={styles.typeBadge}>
+                            <Text style={styles.typeBadgeText}>
+                              {m.match_type}
+                            </Text>
+                          </View>
+                        ) : null}
+
+                        <Text
+                          style={[
+                            styles.statusLabel,
+                            { color: statusColor(m.status) },
+                          ]}
+                        >
+                          {statusLabel(m.status)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {m.league ? (
+                      <View style={styles.leagueRow}>
+                        <Ionicons
+                          name="trophy-outline"
+                          size={14}
+                          color={COLORS.textSoft}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.leagueText} numberOfLines={1}>
+                          {m.league}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+          ))
         )}
-      </View>
-    </SafeAreaView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
+  root: {
     flex: 1,
     backgroundColor: COLORS.bg,
   },
-  root: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 24,
   },
-  header: {
+  pageHeader: {
     marginBottom: 16,
   },
-  title: {
+  pageTitle: {
     color: COLORS.text,
     fontSize: 22,
     fontWeight: "800",
   },
-  subtitle: {
-    marginTop: 4,
+  pageSubtitle: {
     color: COLORS.textSoft,
-    fontSize: 13,
+    fontSize: 14,
+    marginTop: 4,
   },
   toggleRow: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     marginBottom: 10,
   },
   toggleChip: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: COLORS.chipBg,
   },
   toggleChipActive: {
-    backgroundColor: "rgba(245,197,66,0.18)",
+    backgroundColor: COLORS.chipBgActive,
     borderWidth: 1,
-    borderColor: "rgba(245,197,66,0.35)",
+    borderColor: "rgba(245,197,66,0.45)",
   },
   toggleChipText: {
     color: COLORS.textSoft,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
   },
   toggleChipTextActive: {
     color: COLORS.text,
   },
-  teamFilterRow: {
+  teamChipsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 8,
+    paddingVertical: 4,
     marginBottom: 12,
   },
   teamChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.04)",
+    backgroundColor: COLORS.chipBg,
   },
   teamChipActive: {
-    backgroundColor: "rgba(245,197,66,0.18)",
+    backgroundColor: COLORS.chipBgActive,
     borderWidth: 1,
-    borderColor: "rgba(245,197,66,0.35)",
+    borderColor: "rgba(245,197,66,0.45)",
   },
   teamChipText: {
     color: COLORS.textSoft,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
   },
   teamChipTextActive: {
     color: COLORS.text,
   },
-  section: {
-    marginBottom: 16,
+  loadingBox: {
+    marginTop: 30,
+    alignItems: "center",
+    gap: 8,
   },
-  sectionLabel: {
+  helpText: {
     color: COLORS.textSoft,
-    fontSize: 12,
-    marginBottom: 6,
+    fontSize: 13,
+    marginTop: 6,
+  },
+  dateHeader: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+    marginBottom: 8,
+    textTransform: "capitalize",
   },
   matchCard: {
     backgroundColor: COLORS.panel,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  matchHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 10,
   },
   matchTime: {
     color: COLORS.text,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "700",
   },
-  matchTypeBadge: {
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: "rgba(255,255,255,0.05)",
+  matchTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "600",
+    marginTop: 4,
   },
-  matchTypeText: {
+  matchSub: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+    marginTop: 2,
+  },
+  typeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    marginBottom: 6,
+  },
+  typeBadgeText: {
     color: COLORS.textSoft,
     fontSize: 11,
     fontWeight: "600",
   },
-  matchTeams: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  matchFooterRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  matchLocation: {
-    color: COLORS.textSoft,
-    fontSize: 12,
-  },
-  matchStatusPlayed: {
-    color: "#6DD58C",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  matchStatusCancelled: {
-    color: "#FF6B6B",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  emptyState: {
-    marginTop: 40,
-    alignItems: "center",
-    paddingHorizontal: 16,
-  },
-  emptyTitle: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-  emptyText: {
-    color: COLORS.textSoft,
+  statusLabel: {
     fontSize: 13,
-    textAlign: "center",
+    fontWeight: "600",
+    marginTop: 4,
+  },
+  leagueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+  },
+  leagueText: {
+    color: COLORS.textSoft,
+    fontSize: 12,
   },
 });
