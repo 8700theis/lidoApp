@@ -608,6 +608,25 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
   setMode("teamDetail");
 };
 
+const removePlayerFromTeam = async (player: { email: string; name: string | null; role: string }) => {
+  if (!selectedTeam) return;
+
+  const email = player.email.toLowerCase();
+
+  const { error } = await supabase
+    .from("team_players")
+    .delete()
+    .eq("team_id", selectedTeam.id)
+    .eq("email", email);
+
+  if (error) {
+    Alert.alert("Fejl", error.message);
+    return;
+  }
+
+  await loadTeamDetail(selectedTeam.id);
+};
+
 
 
   const openEditPlayer = (p: { email: string; name: string | null; role: string }) => {
@@ -1250,8 +1269,8 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {teamPlayers.map((p) => {
+                      const icon = roleMeta(p.role); // ✅ DEFINER icon HER
                       const label = (p.name?.trim() || p.email).trim();
-                      const b = getBadgesForUser(p.email, p.role);
 
                       return (
                         <View key={p.email} style={styles.playerRow}>
@@ -1259,8 +1278,41 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
                             <Text style={styles.playerName} numberOfLines={1}>
                               {label}
                             </Text>
-                            {renderBadgesSmall(b)}
+
+                            {/* lille role-ikon ved siden af navnet */}
+                            <Ionicons
+                              name={icon.name as any}
+                              size={16}
+                              color={icon.color}
+                              style={{ marginLeft: 10 }}
+                            />
                           </View>
+
+                          {/* low-key rødt kryds til at fjerne spiller fra holdet */}
+                          <Pressable
+                            onPress={() => {
+                              Alert.alert(
+                                "Fjern spiller fra hold?",
+                                `Er du sikker på at du vil fjerne "${label}" fra ${selectedTeam?.name ?? "holdet"}?`,
+                                [
+                                  { text: "Annuller", style: "cancel" },
+                                  {
+                                    text: "Fjern",
+                                    style: "destructive",
+                                    onPress: () => removePlayerFromTeam(p),
+                                  },
+                                ]
+                              );
+                            }}
+                            hitSlop={8}
+                          >
+                            <Ionicons
+                              name="close-circle-outline"
+                              size={18}
+                              color="rgba(255,82,82,0.9)"
+                              style={{ opacity: 0.9 }}
+                            />
+                          </Pressable>
                         </View>
                       );
                     })}
@@ -1690,5 +1742,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginLeft: 10,
+  },
+  removePlayerButton: {
+    paddingLeft: 8,
+    paddingVertical: 2,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });
