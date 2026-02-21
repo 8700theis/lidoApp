@@ -34,7 +34,16 @@ export default function ProfileModal() {
 
   // UI state: main / create / players / edit players
   const [mode, setMode] = useState<
-  "main" | "create" | "players" | "edit" | "teams" | "teamDetail" | "selectCaptain" | "selectTeamPlayer">("main");
+    | "main"
+    | "create"
+    | "players"
+    | "edit"
+    | "teams"
+    | "teamDetail"
+    | "selectCaptain"
+    | "selectTeamPlayer"
+    | "createMatch"
+  >("main");
 
 
   const [newName, setNewName] = useState("");
@@ -63,9 +72,32 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   const [newTeamName, setNewTeamName] = useState("");
   const [creatingTeam, setCreatingTeam] = useState(false);
 
+  // Create match state
+  const [matchTeamId, setMatchTeamId] = useState<string | null>(null);
+  const [matchDate, setMatchDate] = useState("");   // "2025-03-10"
+  const [matchTime, setMatchTime] = useState("");   // "19:30"
+  const [matchIsHome, setMatchIsHome] = useState<null | boolean>(true); // true = hjemme, false = ude
+  const [matchLeague, setMatchLeague] = useState("");
+  const [matchOpponent, setMatchOpponent] = useState("");
+  const [matchType, setMatchType] = useState("");   // fx "Turnering", "Træningskamp"
+  const [matchNotes, setMatchNotes] = useState("");
+  const [creatingMatch, setCreatingMatch] = useState(false);
+
   // Global badge-oversigt for ALLE brugere (ikke kun mig selv)
   const [captainEmails, setCaptainEmails] = useState<Set<string>>(new Set());
   const [playerEmails, setPlayerEmails] = useState<Set<string>>(new Set());
+
+  // Helper til at nulstille opret kamp formen
+  const resetCreateMatchForm = () => {
+    setMatchTeamId(null);
+    setMatchDate("");
+    setMatchTime("");
+    setMatchIsHome(true);
+    setMatchLeague("");
+    setMatchOpponent("");
+    setMatchType("");
+    setMatchNotes("");
+  };
 
   // Helper til at få badges for en vilkårlig bruger
   const getBadgesForUser = (email: string, role: string | null) => {
@@ -121,12 +153,18 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   });
 
 
-  // Edit player state
-  const [selectedPlayer, setSelectedPlayer] = useState<{ email: string; name: string | null; role: string } | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editRole, setEditRole] = useState<Role>("spiller");
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+// Edit player state
+const [selectedPlayer, setSelectedPlayer] = useState<{ email: string; name: string | null; role: string } | null>(null);
+const [editName, setEditName] = useState("");
+const [savingEdit, setSavingEdit] = useState(false);
+const [deleting, setDeleting] = useState(false);
+
+// 🔹 NYT – hvilke hold er spilleren kaptajn / spiller på?
+const [editCaptainTeams, setEditCaptainTeams] = useState<Array<{ id: string; name: string }>>([]);
+const [editPlayerTeams, setEditPlayerTeams] = useState<Array<{ id: string; name: string }>>([]);
+
+// 🔹 NYT – er spilleren admin?
+const [editIsAdmin, setEditIsAdmin] = useState(false);
 
 
   const { width: screenW } = useWindowDimensions();
@@ -284,6 +322,28 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
     return 2; // spiller + alt andet
   };
 
+// Læg dette et sted efter dine andre helpers, fx under roleRank:
+const getBadgesForUserOnTeam = (
+  user: { email: string; role: string },
+  teamId?: string
+  ) => {
+  const email = (user.email || "").toLowerCase();
+
+  // admin er global – vi bruger stadig allowed_users.role til det
+  const isAdmin = (user.role || "").toLowerCase() === "admin";
+
+  // kaptajn: kun hvis personen er kaptajn for DETTE hold
+  const isCaptainHere =
+    !!teamId &&
+    !!teamCaptain &&
+    teamCaptain.email.toLowerCase() === email &&
+    selectedTeam?.id === teamId;
+
+  // spiller: i "Spillere" på et hold er de med i listen → så ja
+  const isPlayerHere = true;
+
+  return { isAdmin, isCaptainHere, isPlayerHere };
+};
 
   const resetCreateForm = () => {
     setNewName("");
@@ -368,6 +428,64 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
 
     resetCreateForm();
     setMode("main");
+  };
+
+  const createMatch = async () => {
+    if (!matchTeamId) {
+      Alert.alert("Mangler", "Vælg hvilket hold kampen hører til.");
+      return;
+    }
+
+    if (!matchDate || !matchTime) {
+      Alert.alert("Mangler", "Udfyld dato og tidspunkt.");
+      return;
+    }
+
+    if (matchIsHome === null) {
+      Alert.alert("Mangler", "Vælg om kampen er hjemme eller ude.");
+      return;
+    }
+
+    if (!matchOpponent.trim()) {
+      Alert.alert("Mangler", "Skriv modstanderens navn.");
+      return;
+    }
+
+    // Simpel parsing: "2025-03-10" + "19:30"
+    const isoString = `${matchDate}T${matchTime}:00`;
+    const parsed = new Date(isoString);
+
+    if (isNaN(parsed.getTime())) {
+      Alert.alert("Ugyldig dato/tid", "Tjek at dato og tidspunkt er gyldigt (fx 2025-03-10 og 19:30).");
+      return;
+    }
+
+    setCreatingMatch(true);
+    try {
+      const { data, error } = await supabase.rpc("admin_create_match", {
+        p_team_id: matchTeamId,
+        p_start_at: parsed.toISOString(), // supabase laver det til timestamptz
+        p_is_home: matchIsHome,
+        p_league: matchLeague || null,
+        p_opponent: matchOpponent,
+        p_match_type: matchType || null,
+        p_notes: matchNotes || null,
+      });
+
+      if (error) {
+        Alert.alert("Fejl", error.message);
+        return;
+      }
+
+      Alert.alert("Kamp oprettet ✅", "Kampen er nu oprettet for holdet.");
+      resetCreateMatchForm();
+      // Vi hopper tilbage til "Hold" så man evt. kan se/programmere flere
+      setMode("teams");
+      // Genindlæs hold hvis vi senere vil vise kamp-count osv.
+      await loadTeams();
+    } finally {
+      setCreatingMatch(false);
+    }
   };
 
   const loadPlayers = async () => {
@@ -541,34 +659,37 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   };
 
 
-  const setCaptainForTeam = async (player: { email: string; name: string | null; role: string }) => {
-    if (!selectedTeam) return;
+const setCaptainForTeam = async (player: { email: string; name: string | null; role: string }) => {
+  if (!selectedTeam) return;
 
-    const email = player.email.toLowerCase();
+  const email = player.email.toLowerCase();
 
-    const { error } = await supabase
-      .from("teams")
-      .update({ captain_email: email })
-      .eq("id", selectedTeam.id);
+  // 1) Sæt kaptajn på det valgte hold
+  const { error } = await supabase
+    .from("teams")
+    .update({ captain_email: email })
+    .eq("id", selectedTeam.id);
 
-    if (error) {
-      Alert.alert("Fejl", error.message);
-      return;
-    }
+  if (error) {
+    Alert.alert("Fejl", error.message);
+    return;
+  }
 
-    await Promise.all([
-      loadTeamDetail(selectedTeam.id),
-      loadTeams(),  // 🔁 så “Vælg hold til kaptajn” bliver opdateret
-    ]);
+  // 2) Sørg for at allowed_users.role afspejler at personen nu er kaptajn
+  await syncCaptainRoleForEmail(email);
 
-    setMode("teamDetail");
-  };
+  // 3) Reload detail og tilbage til team view
+  await loadTeamDetail(selectedTeam.id);
+  setMode("teamDetail");
+};
 
 
 const clearCaptainForTeam = async () => {
   if (!selectedTeam || !teamCaptain) return;
 
-  // Vi rører IKKE ved allowed_users.role her – kaptajn er nu kun pr. hold
+  const email = teamCaptain.email.toLowerCase();
+
+  // 1) Fjern kaptajn på det aktuelle hold
   const { error } = await supabase
     .from("teams")
     .update({ captain_email: null })
@@ -579,11 +700,12 @@ const clearCaptainForTeam = async () => {
     return;
   }
 
+  // 2) Tjek om personen stadig er kaptajn for andre hold.
+  //    Hvis ikke → nedgradér til spiller (medmindre admin).
+  await syncCaptainRoleForEmail(email);
+
+  // 3) Reload detail view
   await loadTeamDetail(selectedTeam.id);
-  await Promise.all([
-    loadTeamDetail(selectedTeam.id),
-    loadTeams(),
-  ]);
 };
 
 
@@ -608,6 +730,100 @@ const addPlayerToTeam = async (player: { email: string; name: string | null; rol
   setMode("teamDetail");
 };
 
+const loadEditPlayerTeams = async (email: string) => {
+  const lower = email.toLowerCase();
+
+  // 1) hold hvor spilleren er kaptajn
+  const { data: capTeams, error: capErr } = await supabase
+    .from("teams")
+    .select("id,name")
+    .eq("captain_email", lower);
+
+  if (capErr) {
+    Alert.alert("Fejl", capErr.message);
+    return;
+  }
+
+  setEditCaptainTeams((capTeams ?? []) as Array<{ id: string; name: string }>);
+
+  // 2) hold hvor spilleren er spiller
+  const { data: links, error: linksErr } = await supabase
+    .from("team_players")
+    .select("team_id")
+    .eq("email", lower);
+
+  if (linksErr) {
+    Alert.alert("Fejl", linksErr.message);
+    return;
+  }
+
+  const teamIds = Array.from(new Set((links ?? []).map((l: any) => l.team_id)));
+
+  if (teamIds.length === 0) {
+    setEditPlayerTeams([]);
+    return;
+  }
+
+  const { data: playerTeams, error: teamsErr } = await supabase
+    .from("teams")
+    .select("id,name")
+    .in("id", teamIds);
+
+  if (teamsErr) {
+    Alert.alert("Fejl", teamsErr.message);
+    return;
+  }
+
+  setEditPlayerTeams((playerTeams ?? []) as Array<{ id: string; name: string }>);
+};
+
+// Holder allowed_users.role i sync med om en bruger faktisk er kaptajn for nogen hold
+const syncCaptainRoleForEmail = async (rawEmail: string) => {
+  const email = (rawEmail || "").toLowerCase();
+  if (!email) return;
+
+  // 1) Find nuværende rolle
+  const { data: user, error: userErr } = await supabase
+    .from("allowed_users")
+    .select("role")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (userErr || !user) {
+    // hvis brugeren ikke findes mere, gør vi bare ingenting
+    return;
+  }
+
+  // Admin skal aldrig nedgraderes automatisk
+  if (user.role === "admin") return;
+
+  // 2) Tjek om brugeren stadig er kaptajn for mindst ét hold
+  const { data: capTeams, error: capErr } = await supabase
+    .from("teams")
+    .select("id")
+    .eq("captain_email", email);
+
+  if (capErr) {
+    // vi larmer ikke i UI – det er "nice to have"
+    return;
+  }
+
+  const stillCaptain = (capTeams ?? []).length > 0;
+
+  // 3) Beregn ønsket rolle
+  const desiredRole: Role = stillCaptain ? "kaptajn" : "spiller";
+
+  if (user.role === desiredRole) {
+    // Allerede korrekt, ingen grund til at skrive til DB
+    return;
+  }
+
+  await supabase
+    .from("allowed_users")
+    .update({ role: desiredRole })
+    .eq("email", email);
+};
+
 const removePlayerFromTeam = async (player: { email: string; name: string | null; role: string }) => {
   if (!selectedTeam) return;
 
@@ -629,108 +845,161 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
 
 
 
-  const openEditPlayer = (p: { email: string; name: string | null; role: string }) => {
-    setSelectedPlayer(p);
-    setEditName((p.name ?? "").trim());
-    setEditRole(((p.role as Role) || "spiller"));
-    setMode("edit");
-  };
+const openEditPlayer = (p: { email: string; name: string | null; role: string }) => {
+  setSelectedPlayer(p);
+  setEditName((p.name ?? "").trim());
 
-  const savePlayerEdits = async () => {
-    if (!selectedPlayer) return;
+  // 🔹 er spilleren admin lige nu?
+  const isAdmin = (p.role || "").toLowerCase() === "admin";
+  setEditIsAdmin(isAdmin);
 
-    const name = editName.trim();
-    const role = editRole;
+  // 🔹 hent de hold spilleren er knyttet til
+  loadEditPlayerTeams(p.email);
 
-    if (!name) {
-      Alert.alert("Mangler", "Navn må ikke være tomt.");
-      return;
-    }
+  setMode("edit");
+};
 
-    setSavingEdit(true);
-    const { error } = await supabase.rpc("admin_update_allowed_user", {
-      p_email: selectedPlayer.email,
-      p_name: name,
-      p_role: role,
-    });
-    setSavingEdit(false);
+const savePlayerEdits = async () => {
+  if (!selectedPlayer) return;
 
-    if (error) {
-      Alert.alert("Fejl", error.message);
-      return;
-    }
+  const name = editName.trim();
+  if (!name) {
+    Alert.alert("Mangler", "Navn må ikke være tomt.");
+    return;
+  }
 
-    Alert.alert("Gemt ✅", "Spilleren er opdateret.");
-    await loadPlayers(); // refresh liste
-    setMode("players");  // tilbage til liste
-  };
+  setSavingEdit(true);
+  const { error } = await supabase.rpc("admin_update_allowed_user", {
+    p_email: selectedPlayer.email,
+    p_name: name,
+    // 🔹 behold nuværende role-værdi uændret
+    p_role: selectedPlayer.role,
+  });
+  setSavingEdit(false);
 
-  const deletePlayer = async () => {
-    if (!selectedPlayer) return;
+  if (error) {
+    Alert.alert("Fejl", error.message);
+    return;
+  }
 
-    Alert.alert(
-      "Slet spiller?",
-      `Er du sikker på at du vil fjerne "${selectedPlayer.name ?? selectedPlayer.email}" fra systemet?`,
-      [
-        { text: "Annuller", style: "cancel" },
-        {
-          text: "Slet",
-          style: "destructive",
-          onPress: async () => {
-            const email = selectedPlayer.email.toLowerCase();
+  Alert.alert("Gemt ✅", "Spilleren er opdateret.");
 
-            setDeleting(true);
+  await loadPlayers(); // refresh liste
 
-            // 1) Fjern som spiller på ALLE hold
-            const { error: tpErr } = await supabase
-              .from("team_players")
-              .delete()
-              .eq("email", email);
+  // opdater local selectedPlayer, så UI matcher
+  setSelectedPlayer((prev) =>
+    prev ? { ...prev, name } : prev
+  );
 
-            if (tpErr) {
-              setDeleting(false);
-              Alert.alert("Fejl", tpErr.message);
-              return;
-            }
+  setMode("players");
+};
 
-            // 2) Nulstil kaptajn på alle hold hvor personen er kaptajn
-            const { error: capErr } = await supabase
-              .from("teams")
-              .update({ captain_email: null })
-              .eq("captain_email", email);
+const deletePlayer = async () => {
+  if (!selectedPlayer) return;
 
-            if (capErr) {
-              setDeleting(false);
-              Alert.alert("Fejl", capErr.message);
-              return;
-            }
+  Alert.alert(
+    "Slet spiller?",
+    `Er du sikker på at du vil fjerne "${selectedPlayer.name ?? selectedPlayer.email}" fra systemet?`,
+    [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Slet",
+        style: "destructive",
+        onPress: async () => {
+          const email = selectedPlayer.email.toLowerCase();
 
-            // 3) Kald din eksisterende RPC til at fjerne fra allowed_users (+ evt. auth)
-            const { error: delErr } = await supabase.rpc("admin_delete_allowed_user", {
-              p_email: selectedPlayer.email,
-            });
+          setDeleting(true);
 
+          // 1) Fjern som spiller på ALLE hold
+          const { error: tpErr } = await supabase
+            .from("team_players")
+            .delete()
+            .eq("email", email);
+
+          if (tpErr) {
             setDeleting(false);
+            Alert.alert("Fejl", tpErr.message);
+            return;
+          }
 
-            if (delErr) {
-              Alert.alert("Fejl", delErr.message);
-              return;
-            }
+          // 2) Nulstil kaptajn på alle hold hvor personen er kaptajn
+          const { error: capErr } = await supabase
+            .from("teams")
+            .update({ captain_email: null })
+            .eq("captain_email", email);
 
-            Alert.alert("Slettet ✅", "Spilleren er fjernet fra whitelisten og alle hold.");
+          if (capErr) {
+            setDeleting(false);
+            Alert.alert("Fejl", capErr.message);
+            return;
+          }
 
-            await Promise.all([
-              loadPlayers(),
-              loadTeams(), // så kaptajn-info / holdene også er friske
-            ]);
+          // 3) Kald din eksisterende RPC til at fjerne fra allowed_users (+ evt. auth)
+          const { error: delErr } = await supabase.rpc("admin_delete_allowed_user", {
+            p_email: selectedPlayer.email,
+          });
 
-            setSelectedPlayer(null);
-            setMode("players");
-          },
+          setDeleting(false);
+
+          if (delErr) {
+            Alert.alert("Fejl", delErr.message);
+            return;
+          }
+
+          Alert.alert("Slettet ✅", "Spilleren er fjernet fra whitelisten og alle hold.");
+
+          await Promise.all([
+            loadPlayers(),
+            loadTeams(), // så kaptajn-info / holdene også er friske
+          ]);
+
+          setSelectedPlayer(null);
+          setMode("players");
         },
-      ]
-    );
-  };
+      },
+    ]
+  );
+};
+
+const grantAdminToPlayer = async () => {
+  if (!selectedPlayer) return;
+
+  Alert.alert(
+    "Giv admin?",
+    `Er du sikker på at du vil give admin-rettigheder til "${selectedPlayer.name ?? selectedPlayer.email}"?`,
+    [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Giv admin",
+        style: "destructive",
+        onPress: async () => {
+          const name = (editName.trim() || selectedPlayer.name || "").trim();
+
+          const { error } = await supabase.rpc("admin_update_allowed_user", {
+            p_email: selectedPlayer.email,
+            p_name: name,
+            p_role: "admin",
+          });
+
+          if (error) {
+            Alert.alert("Fejl", error.message);
+            return;
+          }
+
+          // opdatér local state så UI er friskt
+          setEditIsAdmin(true);
+          setSelectedPlayer((prev) =>
+            prev ? { ...prev, role: "admin", name } : prev
+          );
+
+          await loadPlayers();
+
+          Alert.alert("Opdateret ✅", "Brugeren er nu admin.");
+        },
+      },
+    ]
+  );
+};
 
   return (
     <View style={styles.root}>
@@ -851,6 +1120,14 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                   <Pressable onPress={() => setMode("teams")} style={styles.adminButton}>
                     <Ionicons name="layers-outline" size={18} color={COLORS.text} />
                     <Text style={styles.adminButtonText}>Hold</Text>
+                  </Pressable>
+                ) : null}
+
+                {/* Admin-only */}
+                {!profileLoading && profile?.is_admin ? (
+                  <Pressable onPress={() => setMode("createMatch")} style={styles.adminButton}>
+                    <Ionicons name="calendar-outline" size={18} color={COLORS.text} />
+                    <Text style={styles.adminButtonText}>Opret kamp</Text>
                   </Pressable>
                 ) : null}
 
@@ -1059,6 +1336,199 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
               >
                 <Text style={styles.secondaryButtonText}>Tilbage</Text>
               </Pressable>
+            </>
+          ) : mode === "createMatch" ? (
+            <>
+              <Text style={styles.sectionTitle}>Opret kamp</Text>
+
+              {/* Scrollable content */}
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{
+                  paddingBottom: 24,
+                  gap: 10,
+                }}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Holdvalg */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Hold</Text>
+
+                  {teams.length === 0 ? (
+                    <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
+                  ) : (
+                    <View style={styles.rolePicker}>
+                      {teams.map((t) => {
+                        const isSelected = matchTeamId === t.id;
+                        return (
+                          <Pressable
+                            key={t.id}
+                            onPress={() => setMatchTeamId(t.id)}
+                            style={[
+                              styles.roleChip,
+                              isSelected && styles.roleChipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleChipText,
+                                isSelected && styles.roleChipTextActive,
+                              ]}
+                            >
+                              {t.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                {/* Dato + tid */}
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <View style={[styles.inputWrap, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Dato</Text>
+                    <TextInput
+                      value={matchDate}
+                      onChangeText={setMatchDate}
+                      placeholder="2025-03-10"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      style={styles.input}
+                      autoCapitalize="none"
+                    />
+                  </View>
+
+                  <View style={[styles.inputWrap, { flex: 1 }]}>
+                    <Text style={styles.inputLabel}>Tidspunkt</Text>
+                    <TextInput
+                      value={matchTime}
+                      onChangeText={setMatchTime}
+                      placeholder="19:30"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      style={styles.input}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                </View>
+
+                {/* Hjemme / ude */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Bane</Text>
+                  <View style={styles.rolePicker}>
+                    <Pressable
+                      onPress={() => setMatchIsHome(true)}
+                      style={[
+                        styles.roleChip,
+                        matchIsHome === true && styles.roleChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.roleChipText,
+                          matchIsHome === true && styles.roleChipTextActive,
+                        ]}
+                      >
+                        Hjemme
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => setMatchIsHome(false)}
+                      style={[
+                        styles.roleChip,
+                        matchIsHome === false && styles.roleChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.roleChipText,
+                          matchIsHome === false && styles.roleChipTextActive,
+                        ]}
+                      >
+                        Ude
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Liga */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Liga (valgfri)</Text>
+                  <TextInput
+                    value={matchLeague}
+                    onChangeText={setMatchLeague}
+                    placeholder="Fx U15 A, 2. division"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                {/* Modstander */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Modstander</Text>
+                  <TextInput
+                    value={matchOpponent}
+                    onChangeText={setMatchOpponent}
+                    placeholder="Fx Køge, Brøndby"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="words"
+                  />
+                </View>
+
+                {/* Type */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Type (valgfri)</Text>
+                  <TextInput
+                    value={matchType}
+                    onChangeText={setMatchType}
+                    placeholder="Fx Træningskamp, Turnering"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={styles.input}
+                    autoCapitalize="sentences"
+                  />
+                </View>
+
+                {/* Noter */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Noter (valgfri)</Text>
+                  <TextInput
+                    value={matchNotes}
+                    onChangeText={setMatchNotes}
+                    placeholder="Ekstra info til spillerne"
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    style={[styles.input, { minHeight: 60 }]}
+                    multiline
+                  />
+                </View>
+
+                {/* Her kommer senere: Klarmelding / Vælg spillere-sektion */}
+              </ScrollView>
+
+              <View style={{ paddingTop: 12 }}>            
+                <Pressable
+                  onPress={createMatch}
+                  disabled={creatingMatch}
+                  style={[styles.primaryButton, creatingMatch && { opacity: 0.7 }]}
+                >
+                  {creatingMatch ? (
+                    <Text style={styles.primaryButtonText}>Opretter...</Text>
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Opret kamp</Text>
+                  )}
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    resetCreateMatchForm();
+                    setMode("main");
+                  }}
+                  style={styles.secondaryButton}
+                >
+                  <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                </Pressable>
+              </View>
             </>
           ) : mode === "players" ? (
             <>
@@ -1269,8 +1739,9 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                 ) : (
                   <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
                     {teamPlayers.map((p) => {
-                      const icon = roleMeta(p.role); // ✅ DEFINER icon HER
                       const label = (p.name?.trim() || p.email).trim();
+                      const { isAdmin, isCaptainHere, isPlayerHere } =
+                        getBadgesForUserOnTeam(p, selectedTeam?.id);
 
                       return (
                         <View key={p.email} style={styles.playerRow}>
@@ -1279,21 +1750,43 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                               {label}
                             </Text>
 
-                            {/* lille role-ikon ved siden af navnet */}
-                            <Ionicons
-                              name={icon.name as any}
-                              size={16}
-                              color={icon.color}
-                              style={{ marginLeft: 10 }}
-                            />
+                            {/* admin badge */}
+                            {isAdmin && (
+                              <Ionicons
+                                name="shield-checkmark-outline"
+                                size={16}
+                                color={COLORS.accent}
+                                style={{ marginLeft: 8 }}
+                              />
+                            )}
+
+                            {/* kaptajn-badge (kun hvis kaptajn for DETTE hold) */}
+                            {isCaptainHere && (
+                              <Ionicons
+                                name="flag-outline"
+                                size={16}
+                                color="#7FB2FF"
+                                style={{ marginLeft: 6 }}
+                              />
+                            )}
+
+                            {/* spiller-badge (de er jo spillere på det her hold) */}
+                            {isPlayerHere && (
+                              <Ionicons
+                                name="navigate-outline"
+                                size={16}
+                                color="#3EE08E"
+                                style={{ marginLeft: 6 }}
+                              />
+                            )}
                           </View>
 
-                          {/* low-key rødt kryds til at fjerne spiller fra holdet */}
+                          {/* den røde remove-knap du allerede har */}
                           <Pressable
-                            onPress={() => {
+                            onPress={() =>
                               Alert.alert(
-                                "Fjern spiller fra hold?",
-                                `Er du sikker på at du vil fjerne "${label}" fra ${selectedTeam?.name ?? "holdet"}?`,
+                                "Fjern spiller?",
+                                `Er du sikker på at du vil fjerne "${label}" fra ${selectedTeam?.name}?`,
                                 [
                                   { text: "Annuller", style: "cancel" },
                                   {
@@ -1302,15 +1795,14 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                                     onPress: () => removePlayerFromTeam(p),
                                   },
                                 ]
-                              );
-                            }}
-                            hitSlop={8}
+                              )
+                            }
+                            hitSlop={10}
                           >
                             <Ionicons
-                              name="close-circle-outline"
+                              name="close-circle"
                               size={18}
                               color="rgba(255,82,82,0.9)"
-                              style={{ opacity: 0.9 }}
                             />
                           </Pressable>
                         </View>
@@ -1432,6 +1924,7 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
               <Text style={styles.sectionTitlePlayers}>Rediger spiller</Text>
 
               <View style={{ gap: 10 }}>
+                {/* Navn */}
                 <View style={styles.inputWrap}>
                   <Text style={styles.inputLabel}>Navn</Text>
                   <TextInput
@@ -1444,32 +1937,60 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                   />
                 </View>
 
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Rolle</Text>
-                  <View style={styles.rolePicker}>
-                    {ROLES.map((r) => (
-                      <Pressable
-                        key={r}
-                        onPress={() => setEditRole(r)}
-                        style={[styles.roleChip, editRole === r && styles.roleChipActive]}
-                      >
-                        <Text style={[styles.roleChipText, editRole === r && styles.roleChipTextActive]}>
-                          {r}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Info (email vises read-only) */}
+                {/* Email (read-only) */}
                 <View style={styles.row}>
-                  <View style={styles.roleIcon}>
+                  <View className="roleIcon" style={styles.roleIcon}>
                     <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
                   </View>
                   <Text style={styles.rowText} numberOfLines={1}>
                     {selectedPlayer?.email ?? ""}
                   </Text>
                 </View>
+
+                {/* Holdkaptajn for */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Holdkaptajn for:</Text>
+
+                  {editCaptainTeams.length === 0 ? (
+                    <Text style={styles.helpText}>Ikke kaptajn for nogle hold.</Text>
+                  ) : (
+                    <View style={{ gap: 6 }}>
+                      {editCaptainTeams.map((t) => (
+                        <View key={t.id} style={styles.teamChip}>
+                          <Text style={styles.teamChipText}>{t.name}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Spiller på hold */}
+                <View style={styles.inputWrap}>
+                  <Text style={styles.inputLabel}>Spiller på hold:</Text>
+
+                  {editPlayerTeams.length === 0 ? (
+                    <Text style={styles.helpText}>Ikke tilknyttet nogen hold.</Text>
+                  ) : (
+                    <View style={{ gap: 6 }}>
+                      {editPlayerTeams.map((t) => (
+                        <View key={t.id} style={styles.teamChip}>
+                          <Text style={styles.teamChipText}>{t.name}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Giv admin-knap – kun hvis ikke admin i forvejen */}
+                {!editIsAdmin && (
+                  <Pressable
+                    onPress={grantAdminToPlayer}
+                    style={[styles.primaryButton, { marginTop: 4 }]}
+                  >
+                    <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.bg} />
+                    <Text style={styles.primaryButtonText}>Giv admin</Text>
+                  </Pressable>
+                )}
               </View>
 
               <View style={{ flex: 1 }} />
@@ -1480,7 +2001,9 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                 style={[styles.primaryButton, savingEdit && { opacity: 0.7 }]}
               >
                 <Ionicons name="save-outline" size={18} color={COLORS.bg} />
-                <Text style={styles.primaryButtonText}>{savingEdit ? "Gemmer..." : "Gem ændringer"}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {savingEdit ? "Gemmer..." : "Gem ændringer"}
+                </Text>
               </Pressable>
 
               <Pressable
@@ -1489,10 +2012,15 @@ const removePlayerFromTeam = async (player: { email: string; name: string | null
                 style={[styles.dangerButton, deleting && { opacity: 0.7 }]}
               >
                 <Ionicons name="trash-outline" size={18} color={COLORS.text} />
-                <Text style={styles.dangerButtonText}>{deleting ? "Sletter..." : "Slet spiller"}</Text>
+                <Text style={styles.dangerButtonText}>
+                  {deleting ? "Sletter..." : "Slet spiller"}
+                </Text>
               </Pressable>
 
-              <Pressable onPress={() => setMode("players")} style={styles.secondaryButton}>
+              <Pressable
+                onPress={() => setMode("players")}
+                style={styles.secondaryButton}
+              >
                 <Text style={styles.secondaryButtonText}>Tilbage</Text>
               </Pressable>
             </>

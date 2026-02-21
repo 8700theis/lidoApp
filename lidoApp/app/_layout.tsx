@@ -4,10 +4,16 @@ import { Stack } from "expo-router";
 import { useEffect } from "react";
 import * as Linking from "expo-linking";
 import { supabase } from "../lib/supabase";
+import { StatusBar } from "expo-status-bar";
 
 export default function RootLayout() {
   const { session } = useSession();
   const router = useRouter();
+  const COLORS = {
+    bg: "#0B0F14",
+    accent: "#F5C542",
+    textSoft: "#B7C0C8",
+  };
 
   useEffect(() => {
     const handleUrl = async (url: string) => {
@@ -61,7 +67,9 @@ export default function RootLayout() {
 
 
   return (
+    
     <Stack screenOptions={{ headerShown: false }}>
+      <StatusBar style="light" />
       {/* Main app */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
@@ -71,7 +79,7 @@ export default function RootLayout() {
         options={{
           presentation: "transparentModal",
           headerShown: false,
-          contentStyle: { backgroundColor: "transparent" },
+          contentStyle: { backgroundColor: "transparent", },
         }}
       />
     </Stack>

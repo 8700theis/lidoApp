@@ -11,12 +11,33 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { session, loading } = useSession();
+  const COLORS = {
+    bg: "#0B0F14",
+    accent: "#F5C542",
+    textSoft: "#B7C0C8",
+  };
+
   if (!loading && !session) return <Redirect href="/login" />;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
+        headerStyle: {
+          backgroundColor: COLORS.bg,
+        },
+        headerTitleStyle: {
+          color: COLORS.accent, // GUL titel
+          fontWeight: "700",
+        },
+        headerTintColor: COLORS.accent, // evt. back icon
+        headerShadowVisible: false,
+
+        tabBarStyle: {
+          backgroundColor: COLORS.bg,
+          borderTopWidth: 0,
+        },
+        tabBarActiveTintColor: COLORS.accent,
+        tabBarInactiveTintColor: COLORS.textSoft,
         headerShown: true,
         tabBarButton: HapticTab,
         headerRight: () => (
@@ -24,7 +45,7 @@ export default function TabLayout() {
             onPress={() => router.push("/(modals)/profile")}
             style={{ marginRight: 15, padding: 6 }}
           >
-            <Ionicons name="person-circle" size={28} color="#111" />
+            <Ionicons name="person-circle" size={28} color={COLORS.textSoft} />
           </Pressable>
         ),
       }}
@@ -44,6 +65,15 @@ export default function TabLayout() {
           title: "Explore",
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="paperplane.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="matches"
+        options={{
+          title: "Kampe",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar-outline" size={size} color={color} />
           ),
         }}
       />
