@@ -81,6 +81,10 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   const [matchOpponent, setMatchOpponent] = useState("");
   const [matchType, setMatchType] = useState("");   // fx "Turnering", "Træningskamp"
   const [matchNotes, setMatchNotes] = useState("");
+  const [signupMode, setSignupMode] = useState<"availability" | "preselected" | "locked">("availability");
+  const [matchTeamPlayers, setMatchTeamPlayers] = useState<Array<{ email: string; name: string | null }>>([]);
+  const [matchTeamPlayersLoading, setMatchTeamPlayersLoading] = useState(false);
+  const [matchSelectedPlayers, setMatchSelectedPlayers] = useState<string[]>([]);
   const [creatingMatch, setCreatingMatch] = useState(false);
 
   // Global badge-oversigt for ALLE brugere (ikke kun mig selv)
@@ -97,6 +101,9 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
     setMatchOpponent("");
     setMatchType("");
     setMatchNotes("");
+    setSignupMode("availability");
+    setMatchTeamPlayers([]);
+    setMatchSelectedPlayers([]);
   };
 
   // Helper til at få badges for en vilkårlig bruger
@@ -208,6 +215,61 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
     loadTeams();
     run();
   }, [session?.user?.id]);
+
+  useEffect(() => {
+    const loadMatchTeamPlayers = async () => {
+      if (!matchTeamId) {
+        setMatchTeamPlayers([]);
+        setMatchSelectedPlayers([]);
+        return;
+      }
+
+      setMatchTeamPlayersLoading(true);
+
+      // 1) find emails på spillere på det valgte hold
+      const { data: links, error: linksErr } = await supabase
+        .from("team_players")
+        .select("email")
+        .eq("team_id", matchTeamId);
+
+      if (linksErr) {
+        console.log("loadMatchTeamPlayers error", linksErr.message);
+        setMatchTeamPlayers([]);
+        setMatchTeamPlayersLoading(false);
+        return;
+      }
+
+      const emails = (links ?? []).map((l) => l.email as string);
+
+      if (emails.length === 0) {
+        setMatchTeamPlayers([]);
+        setMatchSelectedPlayers([]);
+        setMatchTeamPlayersLoading(false);
+        return;
+      }
+
+      // 2) hent navnene fra allowed_users
+      const { data: users, error: usersErr } = await supabase
+        .from("allowed_users")
+        .select("email,name")
+        .in("email", emails);
+
+      if (usersErr) {
+        console.log("loadMatchTeamPlayers users error", usersErr.message);
+        setMatchTeamPlayers([]);
+        setMatchTeamPlayersLoading(false);
+        return;
+      }
+
+      const rows = (users ?? []) as { email: string; name: string | null }[];
+
+      setMatchTeamPlayers(rows);
+      setMatchSelectedPlayers([]); // nulstil valg når man skifter hold
+      setMatchTeamPlayersLoading(false);
+    };
+
+    loadMatchTeamPlayers();
+  }, [matchTeamId]);
 
   useEffect(() => {
     const loadBadges = async () => {
@@ -451,25 +513,41 @@ const getBadgesForUserOnTeam = (
       return;
     }
 
-    // Simpel parsing: "2025-03-10" + "19:30"
+    // Hvis vi har valgt "Sæt hold", skal der være mindst én spiller
+    if (signupMode === "preselected" && matchSelectedPlayers.length === 0) {
+      Alert.alert("Mangler", "Vælg mindst én spiller til kampen.");
+      return;
+    }
+
+    // "2026-03-14" + "11:00"
     const isoString = `${matchDate}T${matchTime}:00`;
     const parsed = new Date(isoString);
 
     if (isNaN(parsed.getTime())) {
-      Alert.alert("Ugyldig dato/tid", "Tjek at dato og tidspunkt er gyldigt (fx 2025-03-10 og 19:30).");
+      Alert.alert(
+        "Ugyldig dato/tid",
+        "Tjek at dato og tidspunkt er gyldigt (fx 2025-03-10 og 19:30)."
+      );
       return;
     }
+
+    const preselectedEmails =
+      signupMode === "preselected"
+        ? matchSelectedPlayers.map((e) => e.toLowerCase().trim())
+        : null;
 
     setCreatingMatch(true);
     try {
       const { data, error } = await supabase.rpc("admin_create_match", {
         p_team_id: matchTeamId,
-        p_start_at: parsed.toISOString(), // supabase laver det til timestamptz
+        p_start_at: parsed.toISOString(),
         p_is_home: matchIsHome,
         p_league: matchLeague || null,
         p_opponent: matchOpponent,
         p_match_type: matchType || null,
         p_notes: matchNotes || null,
+        p_signup_mode: signupMode,
+        p_preselected_emails: preselectedEmails,
       });
 
       if (error) {
@@ -479,9 +557,7 @@ const getBadgesForUserOnTeam = (
 
       Alert.alert("Kamp oprettet ✅", "Kampen er nu oprettet for holdet.");
       resetCreateMatchForm();
-      // Vi hopper tilbage til "Hold" så man evt. kan se/programmere flere
       setMode("teams");
-      // Genindlæs hold hvis vi senere vil vise kamp-count osv.
       await loadTeams();
     } finally {
       setCreatingMatch(false);
@@ -1384,6 +1460,131 @@ const grantAdminToPlayer = async () => {
                   )}
                 </View>
 
+                {/* Opret kamp som */}
+                <View style={{ marginTop: 16 }}>
+                  <Text
+                    style={{
+                      color: COLORS.textSoft,
+                      fontSize: 13,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Opret kamp som:
+                  </Text>
+
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    {/* Klarmelding */}
+                    <Pressable
+                      onPress={() => setSignupMode("availability")}
+                      style={[
+                        styles.modeChip,
+                        signupMode === "availability" && styles.modeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modeChipText,
+                          signupMode === "availability" && styles.modeChipTextActive,
+                        ]}
+                      >
+                        Klarmelding
+                      </Text>
+                    </Pressable>
+
+                    {/* Sæt hold */}
+                    <Pressable
+                      onPress={() => setSignupMode("preselected")}
+                      style={[
+                        styles.modeChip,
+                        signupMode === "preselected" && styles.modeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modeChipText,
+                          signupMode === "preselected" && styles.modeChipTextActive,
+                        ]}
+                      >
+                        Sæt hold
+                      </Text>
+                    </Pressable>
+
+                    {/* Låst */}
+                    <Pressable
+                      onPress={() => setSignupMode("locked")}
+                      style={[
+                        styles.modeChip,
+                        signupMode === "locked" && styles.modeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.modeChipText,
+                          signupMode === "locked" && styles.modeChipTextActive,
+                        ]}
+                      >
+                        Låst
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  <Text
+                    style={{
+                      color: COLORS.textSoft,
+                      fontSize: 11,
+                      marginTop: 6,
+                    }}
+                  >
+                    • Klarmelding: spillere kan melde klar/ikke klar.{"\n"}
+                    • Sæt hold: ingen klarmelding, kampen er sat på forhånd.{"\n"}
+                    • Låst: kamp oprettet uden spillerstatus – kan frigives senere.
+                  </Text>
+                </View>
+
+                                {signupMode === "preselected" && (
+                  <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                    <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
+
+                    {!matchTeamId ? (
+                      <Text style={styles.helpText}>Vælg først et hold.</Text>
+                    ) : matchTeamPlayersLoading ? (
+                      <Text style={styles.helpText}>Henter spillere...</Text>
+                    ) : matchTeamPlayers.length === 0 ? (
+                      <Text style={styles.helpText}>
+                        Der er endnu ingen spillere tilknyttet dette hold.
+                      </Text>
+                    ) : (
+                      <View style={{ gap: 8 }}>
+                        {matchTeamPlayers.map((p) => {
+                          const email = p.email.toLowerCase();
+                          const isSelected = matchSelectedPlayers.includes(email);
+
+                          return (
+                            <Pressable
+                              key={email}
+                              onPress={() =>
+                                setMatchSelectedPlayers((prev) =>
+                                  prev.includes(email)
+                                    ? prev.filter((e) => e !== email)
+                                    : [...prev, email]
+                                )
+                              }
+                              style={[
+                                styles.teamChip,
+                                isSelected && styles.teamChipActive,
+                              ]}
+                            >
+                              <Text style={styles.teamChipText}>
+                                {p.name ?? p.email}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* Dato + tid */}
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   <View style={[styles.inputWrap, { flex: 1 }]}>
@@ -1503,7 +1704,6 @@ const grantAdminToPlayer = async () => {
                   />
                 </View>
 
-                {/* Her kommer senere: Klarmelding / Vælg spillere-sektion */}
               </ScrollView>
 
               <View style={{ paddingTop: 12 }}>            
@@ -2276,5 +2476,24 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     justifyContent: "center",
     alignItems: "center",
+  },
+  modeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  modeChipActive: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.6)",
+  },
+  modeChipText: {
+    color: COLORS.textSoft,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  modeChipTextActive: {
+    color: COLORS.text,
   },
 });

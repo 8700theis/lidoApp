@@ -1,6 +1,6 @@
 // app/(tabs)/matches.tsx
-import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -31,8 +31,10 @@ type MatchRow = {
   league: string | null;
   opponent: string;
   match_type: string | null;
-  status: string; // 'planned' | 'played' | 'cancelled' etc.
+  status: string;
   notes: string | null;
+  signup_mode?: "availability" | "preselected" | "locked" | null;
+  my_response?: "ready" | "not_ready" | null;
 };
 
 type UserTeam = {
@@ -53,93 +55,130 @@ export default function MatchesScreen() {
 
   // ---------- DATA LOAD ----------
 
-  useEffect(() => {
-    const load = async () => {
-      if (!session?.user?.email) {
-        setMatches([]);
-        setTeams([]);
-        setLoading(false);
-        return;
-      }
-
-      setLoading(true);
-      const email = session.user.email.toLowerCase();
-
-      // 1) Find alle hold brugeren er på (kaptajn eller spiller)
-      const [{ data: captainTeams, error: capErr }, { data: playerLinks, error: plErr }] =
-        await Promise.all([
-          supabase
-            .from("teams")
-            .select("id,name")
-            .eq("captain_email", email),
-          supabase
-            .from("team_players")
-            .select("team_id")
-            .eq("email", email),
-        ]);
-
-      if (capErr || plErr) {
-        console.error(capErr || plErr);
-        setLoading(false);
-        return;
-      }
-
-      const playerTeamIds = (playerLinks ?? []).map((l) => l.team_id as string);
-      const allTeamIds = Array.from(
-        new Set<string>([
-          ...(captainTeams ?? []).map((t) => t.id as string),
-          ...playerTeamIds,
-        ])
-      );
-
-      if (allTeamIds.length === 0) {
-        setTeams([]);
-        setMatches([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2) Hent hold-navne (unik liste)
-      const { data: teamRows, error: teamErr } = await supabase
-        .from("teams")
-        .select("id,name")
-        .in("id", allTeamIds);
-
-      if (teamErr) {
-        console.error(teamErr);
-        setLoading(false);
-        return;
-      }
-
-      const uniqTeams: UserTeam[] = Array.from(
-        new Map(
-          (teamRows ?? []).map((t) => [t.id as string, { id: t.id as string, name: t.name as string }])
-        ).values()
-      ).sort((a, b) => a.name.localeCompare(b.name, "da"));
-
-      setTeams(uniqTeams);
-
-      // 3) Hent kampe for de hold
-      const { data: matchRows, error: matchErr } = await supabase
-        .from("matches")
-        .select(
-          "id,team_id,start_at,is_home,league,opponent,match_type,status,notes"
-        )
-        .in("team_id", allTeamIds)
-        .order("start_at", { ascending: true });
-
-      if (matchErr) {
-        console.error(matchErr);
-        setLoading(false);
-        return;
-      }
-
-      setMatches((matchRows ?? []) as MatchRow[]);
+  const loadMatches = useCallback(async () => {
+    if (!session?.user?.email) {
+      setMatches([]);
+      setTeams([]);
       setLoading(false);
-    };
+      return;
+    }
 
-    load();
-  }, [session?.user?.email]);
+    setLoading(true);
+    const email = session.user.email.toLowerCase();
+
+    // 1) Find alle hold brugeren er på (kaptajn eller spiller)
+    const [{ data: captainTeams, error: capErr }, { data: playerLinks, error: plErr }] =
+      await Promise.all([
+        supabase.from("teams").select("id,name").eq("captain_email", email),
+        supabase.from("team_players").select("team_id").eq("email", email),
+      ]);
+
+    if (capErr || plErr) {
+      console.error(capErr || plErr);
+      setLoading(false);
+      return;
+    }
+
+    const playerTeamIds = (playerLinks ?? []).map((l) => l.team_id as string);
+    const allTeamIds = Array.from(
+      new Set<string>([
+        ...(captainTeams ?? []).map((t) => t.id as string),
+        ...playerTeamIds,
+      ])
+    );
+
+    if (allTeamIds.length === 0) {
+      setTeams([]);
+      setMatches([]);
+      setLoading(false);
+      return;
+    }
+
+    // 2) Hent hold-navne
+    const { data: teamRows, error: teamErr } = await supabase
+      .from("teams")
+      .select("id,name")
+      .in("id", allTeamIds);
+
+    if (teamErr) {
+      console.error(teamErr);
+      setLoading(false);
+      return;
+    }
+
+    const uniqTeams: UserTeam[] = Array.from(
+      new Map(
+        (teamRows ?? []).map((t) => [
+          t.id as string,
+          { id: t.id as string, name: t.name as string },
+        ])
+      ).values()
+    ).sort((a, b) => a.name.localeCompare(b.name, "da"));
+
+    setTeams(uniqTeams);
+
+    // 3) Hent kampe for de hold
+    const { data: matchRows, error: matchErr } = await supabase
+      .from("matches")
+      .select(
+        "id,team_id,start_at,is_home,league,opponent,match_type,status,notes,signup_mode"
+      )
+      .in("team_id", allTeamIds)
+      .order("start_at", { ascending: true });
+
+    if (matchErr) {
+      console.error(matchErr);
+      setLoading(false);
+      return;
+    }
+
+    const baseMatches = (matchRows ?? []) as MatchRow[];
+
+    if (!session?.user?.id || baseMatches.length === 0) {
+      setMatches(baseMatches);
+      setLoading(false);
+      return;
+    }
+
+    // 4) Hent brugerens klarmeldinger
+    const matchIds = baseMatches.map((m) => m.id);
+    const { data: responseRows, error: responseErr } = await supabase
+      .from("match_responses")
+      .select("match_id,status")
+      .eq("user_id", session.user.id)
+      .in("match_id", matchIds);
+
+    if (responseErr) {
+      console.error(responseErr);
+      setMatches(baseMatches);
+      setLoading(false);
+      return;
+    }
+
+    const responseMap: Record<string, "ready" | "not_ready"> = {};
+    (responseRows ?? []).forEach((r: any) => {
+      if (r.status === "ready" || r.status === "not_ready") {
+        responseMap[r.match_id] = r.status;
+      }
+    });
+
+    const merged = baseMatches.map((m) => ({
+      ...m,
+      my_response: responseMap[m.id] ?? null,
+    }));
+
+    setMatches(merged);
+    setLoading(false);
+  }, [session?.user?.email, session?.user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadMatches();
+
+      // intet cleanup nødvendigt – vi loader bare når skærmen får fokus
+      return undefined;
+    }, [loadMatches])
+  );
 
   // ---------- FILTERED / GROUPED DATA ----------
 
@@ -378,6 +417,48 @@ export default function MatchesScreen() {
                         >
                           {statusLabel(m.status)}
                         </Text>
+
+                        {/* 👇 Ny: din klarmelding */}
+                        {(() => {
+                          let label = "";
+                          const mode = m.signup_mode ?? "availability";
+
+                          if (mode === "locked") {
+                            label = "Låst kamp";
+                          } else if (mode === "preselected") {
+                            label = "Holdet er sat";
+                          } else {
+                            label =
+                              m.my_response === "ready"
+                                ? "Du er klar"
+                                : m.my_response === "not_ready"
+                                ? "Du kan ikke"
+                                : "Mangler svar";
+                          }
+
+                          const isReady = mode === "availability" && m.my_response === "ready";
+                          const isNotReady =
+                            mode === "availability" && m.my_response === "not_ready";
+
+                          return (
+                            <View
+                              style={[
+                                styles.responsePill,
+                                isReady && styles.responsePillReady,
+                                isNotReady && styles.responsePillNotReady,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.responsePillText,
+                                  (isReady || isNotReady) && styles.responsePillTextStrong,
+                                ]}
+                              >
+                                {label}
+                              </Text>
+                            </View>
+                          );
+                        })()}
                       </View>
                     </View>
 
@@ -540,5 +621,31 @@ const styles = StyleSheet.create({
   leagueText: {
     color: COLORS.textSoft,
     fontSize: 12,
+  },
+  responsePill: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  responsePillReady: {
+    backgroundColor: "rgba(62,224,142,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(62,224,142,0.7)",
+  },
+  responsePillNotReady: {
+    backgroundColor: "rgba(255,82,82,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,82,82,0.7)",
+  },
+  responsePillText: {
+    color: COLORS.textSoft,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  responsePillTextStrong: {
+    color: COLORS.text,
+    fontWeight: "700",
   },
 });

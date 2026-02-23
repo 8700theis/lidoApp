@@ -21,7 +21,7 @@ const COLORS = {
   accent: "#F5C542",
 };
 
-type MatchDetail = {
+type MatchDetail  = {
   id: string;
   team_id: string;
   start_at: string;
@@ -31,6 +31,7 @@ type MatchDetail = {
   match_type: string | null;
   status: string;
   notes: string | null;
+  signup_mode: "availability" | "preselected" | "locked" | null;
   team: {
     id: string;
     name: string;
@@ -42,12 +43,15 @@ export default function MatchDetailScreen() {
 
     const { session } = useSession();
 
-    const [match, setMatch] = useState<MatchDetail | null>(null);
+    const [match, setMatch] = useState<MatchDetail  | null>(null);
     const [loading, setLoading] = useState(true);
 
     // 👇 ny state til klarmelding
     const [availability, setAvailability] = useState<"ready" | "not_ready" | null>(null);
     const [savingAvailability, setSavingAvailability] = useState(false);
+    // 👇 nyt – udtagede spillere
+    const [roster, setRoster] = useState<{ email: string; name: string | null }[]>([]);
+    const [rosterLoading, setRosterLoading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -55,10 +59,10 @@ export default function MatchDetailScreen() {
 
       setLoading(true);
 
-        const { data, error } = await supabase
+      const { data, error } = await supabase
         .from("matches")
         .select(
-            "id, team_id, start_at, is_home, league, opponent, match_type, status, notes"
+          "id, team_id, start_at, is_home, league, opponent, match_type, status, notes, signup_mode"
         )
         .eq("id", id)
         .single();
@@ -91,43 +95,79 @@ export default function MatchDetailScreen() {
         }
         }
 
-        // byg et MatchDetail-objekt
+        // byg et MatchDetail -objekt
         const mapped: MatchDetail = {
-        id: data.id,
-        team_id: data.team_id,
-        start_at: data.start_at,
-        is_home: data.is_home,
-        league: data.league,
-        opponent: data.opponent,
-        match_type: data.match_type,
-        status: data.status,
-        notes: data.notes,
-        team,
+          id: data.id,
+          team_id: data.team_id,
+          start_at: data.start_at,
+          is_home: data.is_home,
+          league: data.league,
+          opponent: data.opponent,
+          match_type: data.match_type,
+          status: data.status,
+          notes: data.notes,
+          signup_mode: data.signup_mode ?? null,
+          team,
         };
 
         setMatch(mapped);
 
-        // 👇 hent spillerens eksisterende klarmelding, hvis logget ind
-        if (session?.user?.id) {  
-        const {
-            data: availabilityRow,
-            error: availabilityError,
-        } = await supabase
+        // 👇 hent udtagede spillere (match_roster)
+        setRoster([]);
+        setRosterLoading(true);
+
+        const { data: rosterRows, error: rosterErr } = await supabase
+          .from("match_roster")
+          .select("email")
+          .eq("match_id", id);
+
+        if (!rosterErr && rosterRows && rosterRows.length > 0) {
+          const emails = rosterRows
+            .map((r: any) => r.email as string)
+            .filter(Boolean);
+
+          if (emails.length > 0) {
+            const { data: userRows, error: userErr } = await supabase
+              .from("allowed_users")
+              .select("email,name")
+              .in("email", emails);
+
+            if (!userErr && userRows) {
+              const byEmail = new Map(
+                userRows.map((u: any) => [
+                  (u.email as string).toLowerCase(),
+                  { email: u.email as string, name: u.name as string | null },
+                ])
+              );
+
+              const final = emails.map((e) => {
+                const u = byEmail.get(e.toLowerCase());
+                return u ?? { email: e, name: null };
+              });
+
+              setRoster(final);
+            }
+          }
+        }
+
+        setRosterLoading(false);
+
+        // 👇 hent spillerens eksisterende klarmelding, hvis det er en klarmeldings-kamp
+        if (session?.user?.id && mapped.signup_mode === "availability") {
+          const { data: availabilityRow, error: availabilityError } = await supabase
             .from("match_responses")
             .select("status")
             .eq("match_id", id)
             .eq("user_id", session.user.id)
-            .maybeSingle(); // giver null hvis ingen record
+            .maybeSingle();
 
-        console.log("availabilityRow", availabilityRow);
-        console.log("availabilityError", availabilityError);
-
-        if (!availabilityError && availabilityRow) {
+          if (!availabilityError && availabilityRow) {
             setAvailability(availabilityRow.status as "ready" | "not_ready");
-        } else if (!availabilityError && !availabilityRow) {
-            // ingen record endnu -> sørg for at knapperne er “neutrale”
+          } else {
             setAvailability(null);
-        }
+          }
+        } else {
+          setAvailability(null);
         }
 
         setLoading(false);
@@ -210,6 +250,7 @@ export default function MatchDetailScreen() {
   const d = new Date(match.start_at);
   const teamName = match.team?.name ?? "Ukendt hold";
   const place = match.is_home ? "Hjemme" : "Ude";
+  const canRespond = match.signup_mode === "availability";
 
   return (
     <View style={styles.root}>
@@ -266,58 +307,60 @@ export default function MatchDetailScreen() {
           </View>
         </View>
 
-        {/* Din klarmelding */}
-        <View style={styles.availabilityCard}>
+        {/* Din klarmelding – kun hvis kampen er en klarmeldingskamp */}
+        {match.signup_mode === "availability" && (
+          <View style={styles.availabilityCard}>
             <Text style={styles.infoTitle}>Din klarmelding</Text>
 
             <View style={styles.availabilityRow}>
-                {/* Klar */}
-                <Pressable
+              {/* Klar */}
+              <Pressable
                 onPress={() => handleAvailability("ready")}
                 disabled={savingAvailability}
                 style={[
-                    styles.availabilityButton,
-                    availability === "ready" && styles.availabilityButtonActive,
+                  styles.availabilityButton,
+                  availability === "ready" && styles.availabilityButtonActive,
                 ]}
-                >
+              >
                 {savingAvailability && availability === "ready" ? (
-                    <ActivityIndicator size="small" color={COLORS.bg} />
+                  <ActivityIndicator size="small" color={COLORS.bg} />
                 ) : (
-                    <Text
+                  <Text
                     style={[
-                        styles.availabilityButtonText,
-                        availability === "ready" && styles.availabilityButtonTextActive,
+                      styles.availabilityButtonText,
+                      availability === "ready" && styles.availabilityButtonTextActive,
                     ]}
-                    >
+                  >
                     Klar
-                    </Text>
+                  </Text>
                 )}
-                </Pressable>
+              </Pressable>
 
-                {/* Ikke klar */}
-                <Pressable
+              {/* Ikke klar */}
+              <Pressable
                 onPress={() => handleAvailability("not_ready")}
                 disabled={savingAvailability}
                 style={[
-                    styles.availabilityButton,
-                    availability === "not_ready" && styles.availabilityButtonActive,
+                  styles.availabilityButton,
+                  availability === "not_ready" && styles.availabilityButtonActive,
                 ]}
-                >
+              >
                 {savingAvailability && availability === "not_ready" ? (
-                    <ActivityIndicator size="small" color={COLORS.bg} />
+                  <ActivityIndicator size="small" color={COLORS.bg} />
                 ) : (
-                    <Text
+                  <Text
                     style={[
-                        styles.availabilityButtonText,
-                        availability === "not_ready" && styles.availabilityButtonTextActive,
+                      styles.availabilityButtonText,
+                      availability === "not_ready" && styles.availabilityButtonTextActive,
                     ]}
-                    >
+                  >
                     Ikke klar
-                    </Text>
+                  </Text>
                 )}
-                </Pressable>
+              </Pressable>
             </View>
-        </View>
+          </View>
+        )}
 
         {/* Liga */}
         {match.league ? (
@@ -348,6 +391,32 @@ export default function MatchDetailScreen() {
             <Text style={styles.infoText}>{match.notes}</Text>
           </View>
         ) : null}
+
+        {/* Udtagede spillere */}
+        {match.signup_mode === "preselected" && (
+          <View style={styles.infoCard}>
+            <View style={styles.infoHeaderRow}>
+              <Ionicons
+                name="people-outline"
+                size={16}
+                color={COLORS.textSoft}
+              />
+              <Text style={styles.infoTitle}>Udtagede spillere</Text>
+            </View>
+
+            {rosterLoading ? (
+              <Text style={styles.infoText}>Henter spillere...</Text>
+            ) : roster.length === 0 ? (
+              <Text style={styles.infoText}>Ingen spillere udtaget endnu.</Text>
+            ) : (
+              roster.map((p) => (
+                <Text key={p.email} style={styles.infoText}>
+                  {p.name ?? p.email}
+                </Text>
+              ))
+            )}
+          </View>
+        )}        
       </ScrollView>
     </View>
   );
