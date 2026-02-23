@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useFocusEffect } from "expo-router";
 import {
   View,
@@ -8,7 +8,7 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
-  TextInput,   // 👈 tilføj den her
+  TextInput,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
@@ -34,7 +34,7 @@ type AdminMatch = {
   match_type: string | null;
   status: string;
   notes: string | null;
-  signup_mode: "availability" | "preselected" | "locked"; // 👈
+  signup_mode: "availability" | "preselected" | "locked";
 };
 
 type TeamRow = { id: string; name: string };
@@ -57,29 +57,28 @@ export default function AdminMatchesScreen() {
   const [editIsHome, setEditIsHome] = useState(true);
   const [editType, setEditType] = useState("");
   const [editStatus, setEditStatus] = useState<"planned" | "played" | "cancelled">(
-  "planned"
+    "planned"
   );
 
-    // --- NYT: hold & spillere/roster til valgt kamp ---
-  const [editSelectedRoster, setEditSelectedRoster] = useState<string[]>([]);
-  const [editSignupMode, setEditSignupMode] = useState<"availability" | "preselected" | "locked">("availability");
+  // signup / roster
+  const [editSignupMode, setEditSignupMode] =
+    useState<"availability" | "preselected" | "locked">("availability");
 
-  // Spillere på det valgte holds trup
+  // spillere tilknyttet holdet
   const [teamPlayers, setTeamPlayers] = useState<
     { email: string; name: string | null }[]
   >([]);
   const [teamPlayersLoading, setTeamPlayersLoading] = useState(false);
 
-  // Aktuelt udtaget roster (emails)
-  const [rosterEmails, setRosterEmails] = useState<string[]>([]);
+  // spillere der er valgt som udtagne (email lowercase)
+  const [editSelectedRoster, setEditSelectedRoster] = useState<string[]>([]);
 
-  // Til locked → "Frigiv som:"
-  const [releaseMode, setReleaseMode] = useState<"availability" | "preselected" | null>(null);
+  // spillere der har meldt sig klar
+  const [readyPlayers, setReadyPlayers] = useState<
+    { email: string; name: string | null }[]
+  >([]);
 
-  // Spillere der har meldt "klar" (bruges i availability-mode)
-  const [readyPlayers, setReadyPlayers] = useState<{ email: string; name: string | null }[]>([]);
-
-  // 1) Tjek om user er admin (via profiles.is_admin)
+  // 1) tjek admin-flag
   useEffect(() => {
     const loadAdminFlag = async () => {
       if (!session?.user?.id) {
@@ -105,7 +104,7 @@ export default function AdminMatchesScreen() {
     loadAdminFlag();
   }, [session?.user?.id]);
 
-  // 2) Hent kampe + holdnavne
+  // 2) hent kampe + holdnavne
   const loadMatches = async () => {
     setLoading(true);
 
@@ -146,116 +145,95 @@ export default function AdminMatchesScreen() {
 
     setMatches(list);
     setLoading(false);
-    };
+  };
 
-  const loadMatchAuxData = async (match: AdminMatch) => {
-  if (!match) return;
-
-    // 1) spillere på holdet
+  // hent ekstra data til valgt kamp
+  const loadSelectedMatchDetails = async (match: AdminMatch) => {
     setTeamPlayersLoading(true);
+    try {
+      // 1) spillere på holdet
+      const { data: links, error: linksErr } = await supabase
+        .from("team_players")
+        .select("email")
+        .eq("team_id", match.team_id);
 
-    const { data: playerLinks, error: linksErr } = await supabase
-      .from("team_players")
-      .select("email")
-      .eq("team_id", match.team_id);
-
-    if (linksErr) {
-      setTeamPlayersLoading(false);
-      Alert.alert("Fejl", linksErr.message);
-      return;
-    }
-
-    const emails = (playerLinks ?? []).map((l: any) =>
-      (l.email || "").toLowerCase()
-    );
-
-    let players: { email: string; name: string | null }[] = [];
-
-    if (emails.length > 0) {
-      const { data: allowedRows, error: allowedErr } = await supabase
-        .from("allowed_users")
-        .select("email,name")
-        .in("email", emails);
-
-      if (!allowedErr && allowedRows) {
-        const map = new Map(
-          allowedRows.map((u: any) => [
-            (u.email || "").toLowerCase(),
-            { email: u.email, name: u.name },
-          ])
-        );
-
-        players = emails
-          .map((e) => map.get(e))
-          .filter(Boolean) as { email: string; name: string | null }[];
+      if (linksErr) {
+        console.log("team_players error", linksErr.message);
+        setTeamPlayers([]);
+        setReadyPlayers([]);
+        setEditSelectedRoster([]);
+        return;
       }
-    }
 
-    setTeamPlayers(players);
-    setTeamPlayersLoading(false);
-
-    // 2) eksisterende roster
-    const { data: rosterRows, error: rosterErr } = await supabase
-      .from("match_roster")
-      .select("email")
-      .eq("match_id", match.id);
-
-    if (!rosterErr && rosterRows) {
-      setRosterEmails(
-        rosterRows
-          .map((r: any) => (r.email || "").toLowerCase())
-          .filter(Boolean)
+      const emails = (links ?? []).map((l: any) =>
+        (l.email || "").toLowerCase()
       );
-    } else {
-      setRosterEmails([]);
-    }
 
-    // 3) spillere der har meldt klar
-    const { data: responseRows, error: respErr } = await supabase
-      .from("match_responses")
-      .select("user_email,status")
-      .eq("match_id", match.id)
-      .eq("status", "ready");
-
-    if (!respErr && responseRows && responseRows.length > 0) {
-      const readyEmails = responseRows
-        .map((r: any) => (r.user_email || "").toLowerCase())
-        .filter(Boolean);
-
-      if (readyEmails.length > 0) {
-        const { data: readyUsers, error: readyErr } = await supabase
+      let playersForTeam: { email: string; name: string | null }[] = [];
+      if (emails.length > 0) {
+        const { data: allowed, error: allowedErr } = await supabase
           .from("allowed_users")
           .select("email,name")
-          .in("email", readyEmails);
+          .in("email", emails);
 
-        if (!readyErr && readyUsers) {
+        if (!allowedErr && allowed) {
           const map = new Map(
-            readyUsers.map((u: any) => [
+            allowed.map((u: any) => [
               (u.email || "").toLowerCase(),
               { email: u.email, name: u.name },
             ])
           );
-
-          const list = readyEmails
+          playersForTeam = emails
             .map((e) => map.get(e))
             .filter(Boolean) as { email: string; name: string | null }[];
-
-          setReadyPlayers(list);
-        } else {
-          setReadyPlayers([]);
         }
-      } else {
-        setReadyPlayers([]);
       }
-    } else {
-      setReadyPlayers([]);
-    }
+      setTeamPlayers(playersForTeam);
 
-    // 4) init releaseMode hvis kampen er låst
-    if (match.signup_mode === "locked") {
-      setReleaseMode("availability"); // default
-    } else {
-      setReleaseMode(null);
+      // 2) nuværende roster
+      const { data: rosterRows, error: rosterErr } = await supabase
+        .from("match_roster")
+        .select("email")
+        .eq("match_id", match.id);
+
+      let roster: string[] = [];
+      if (!rosterErr && rosterRows) {
+        roster = rosterRows
+          .map((r: any) => (r.email || "").toLowerCase())
+          .filter(Boolean);
+      }
+
+      // 3) klarmeldte spillere (match_responses)
+      const { data: respRows, error: respErr } = await supabase
+        .from("match_responses")
+        .select("user_email,status")
+        .eq("match_id", match.id)
+        .eq("status", "ready");
+
+      let readyList: { email: string; name: string | null }[] = [];
+      if (!respErr && respRows && respRows.length > 0) {
+        const readyEmails = respRows
+          .map((r: any) => (r.user_email || "").toLowerCase())
+          .filter(Boolean);
+
+        readyList = playersForTeam.filter((p) =>
+          readyEmails.includes((p.email || "").toLowerCase())
+        );
+      }
+      setReadyPlayers(readyList);
+
+      // 4) signup mode + initial udvalg
+      setEditSignupMode(match.signup_mode);
+
+      if (match.signup_mode === "preselected") {
+        // start med nuværende roster
+        setEditSelectedRoster(roster);
+      } else {
+        // availability / locked → start tom (admin vælger)
+        setEditSelectedRoster([]);
+      }
+    } finally {
+      setTeamPlayersLoading(false);
     }
   };
 
@@ -265,7 +243,7 @@ export default function AdminMatchesScreen() {
     }
   }, [isAdmin]);
 
-  // Når man kommer tilbage til Admin-tabben -> hent kampe igen
+  // når man kommer tilbage til tabben
   useFocusEffect(
     useCallback(() => {
       if (isAdmin) {
@@ -274,99 +252,21 @@ export default function AdminMatchesScreen() {
     }, [isAdmin])
   );
 
-  // Når man vælger en kamp → sync edit-felterne
+  // sync edit-felter når selected ændres
   useEffect(() => {
-  if (!selected) return;
+    if (!selected) return;
 
-  setEditLeague(selected.league ?? "");
-  setEditOpponent(selected.opponent ?? "");
-  setEditNote(selected.notes ?? "");
+    setEditLeague(selected.league ?? "");
+    setEditOpponent(selected.opponent ?? "");
+    setEditNote(selected.notes ?? "");
+    setEditIsHome(selected.is_home);
+    setEditType(selected.match_type ?? "");
+    const s = (selected.status || "planned") as "planned" | "played" | "cancelled";
+    setEditStatus(s);
 
-  // ⭐ nye felter
-  setEditIsHome(selected.is_home);
-  setEditType(selected.match_type ?? "");
-  // fallback hvis status er tom / noget andet
-  const s = (selected.status || "planned") as "planned" | "played" | "cancelled";
-  setEditStatus(s);
-  loadSelectedMatchDetails(selected);
+    // hent spillere / roster / klarmeldte
+    loadSelectedMatchDetails(selected);
   }, [selected]);
-
-  const loadSelectedMatchDetails = async (match: AdminMatch) => {
-    // 1) Hent spillere på holdet (team_players + allowed_users)
-    const { data: links, error: linksErr } = await supabase
-      .from("team_players")
-      .select("email")
-      .eq("team_id", match.team_id);
-
-    if (linksErr) {
-      console.log("team_players error", linksErr.message);
-      return;
-    }
-
-    const emails = (links ?? []).map((l: any) => l.email as string);
-
-    let playersForTeam: Array<{ email: string; name: string | null }> = [];
-    if (emails.length > 0) {
-      const { data: allowed, error: allowedErr } = await supabase
-        .from("allowed_users")
-        .select("email,name")
-        .in("email", emails);
-
-      if (!allowedErr) {
-        playersForTeam = (allowed ?? []) as any;
-      }
-    }
-
-    setTeamPlayers(playersForTeam);
-
-    // 2) Hent nuværende roster
-    const { data: rosterRows, error: rosterErr } = await supabase
-      .from("match_roster")
-      .select("email")
-      .eq("match_id", match.id);
-
-    if (!rosterErr) {
-      const roster = (rosterRows ?? []).map((r: any) => r.email as string);
-      setRosterEmails(roster);
-    } else {
-      setRosterEmails([]);
-    }
-
-    // 3) Hent "klar" responses til availability-mode
-    const { data: respRows, error: respErr } = await supabase
-      .from("match_responses")
-      .select("user_email") // vi lavede user_email-kolonnen tidligere
-      .eq("match_id", match.id)
-      .eq("status", "ready");
-
-    if (!respErr) {
-      const readyEmails = (respRows ?? []).map((r: any) => r.user_email as string);
-
-      // Map dem ind i same struktur som teamPlayers
-      const readyList: Array<{ email: string; name: string | null }> =
-        playersForTeam.filter((p) =>
-          readyEmails.includes(p.email.toLowerCase())
-        );
-
-      setReadyPlayers(readyList);
-    } else {
-      setReadyPlayers([]);
-    }
-
-    // 4) sæt signup_mode i UI
-    setEditSignupMode(match.signup_mode);
-
-    // 5) init valgt roster afhængig af mode
-    if (match.signup_mode === "preselected") {
-      setEditSelectedRoster(rosterEmails);
-    } else if (match.signup_mode === "availability") {
-      // her vælger admin manuelt blandt klar-spillere → start tom
-      setEditSelectedRoster([]);
-    } else {
-      // locked → ingen initiale
-      setEditSelectedRoster([]);
-    }
-  };
 
   const formatStart = (iso: string) => {
     if (!iso) return "";
@@ -402,34 +302,38 @@ export default function AdminMatchesScreen() {
     const match_type = editType.trim() || null;
     const status = editStatus;
 
-    // --- Beregn ny signup_mode ---
-        // --- NYT: beregn nyt signup_mode og roster ---
+    // beregn ny signup_mode + roster
     let newSignupMode: "availability" | "preselected" | "locked" =
       selected.signup_mode;
-    let newRosterEmails: string[] | null = null;
+    let newRosterEmails: string[] | null = null; // null = rør ikke roster
 
     if (selected.signup_mode === "locked") {
+      // frigiv fra låst
       if (editSignupMode === "availability") {
         newSignupMode = "availability";
-        newRosterEmails = []; // ingen roster endnu
+        newRosterEmails = []; // sørg for at roster er tom
       } else if (editSignupMode === "preselected") {
         newSignupMode = "preselected";
         newRosterEmails = editSelectedRoster;
       }
     } else if (selected.signup_mode === "preselected") {
+      // allerede "sæt hold" → bare opdatér listen
       newSignupMode = "preselected";
       newRosterEmails = editSelectedRoster;
     } else if (selected.signup_mode === "availability") {
-      // Her har admin valgt blandt klarmeldte spillere → vi skifter til "Sæt hold"
-      newSignupMode = "preselected";
-      newRosterEmails = editSelectedRoster;
+      // fra klarmelding → hvis admin har valgt nogle spillere, skifter vi til "sæt hold"
+      if (editSelectedRoster.length > 0) {
+        newSignupMode = "preselected";
+        newRosterEmails = editSelectedRoster;
+      } else {
+        newSignupMode = "availability";
+        newRosterEmails = null; // ingen ændring på roster (der er alligevel ingen)
+      }
     }
-    // hvis den i forvejen er preselected, bliver den bare ved med at være det
 
     setSaving(true);
-
     try {
-      // 1) Opdatér selve kampen
+      // 1) opdatér kampen
       const { error: matchErr } = await supabase
         .from("matches")
         .update({
@@ -443,66 +347,21 @@ export default function AdminMatchesScreen() {
         })
         .eq("id", selected.id);
 
-      if (matchErr) {
-        throw matchErr;
-      }
+      if (matchErr) throw matchErr;
 
-      // Hvis der er et nyt roster-sæt, så overskriv match_roster for kampen
+      // 2) opdatér roster hvis nødvendigt
       if (newRosterEmails !== null) {
-        // 1) Slet eksisterende rækker
         const { error: delErr } = await supabase
           .from("match_roster")
           .delete()
           .eq("match_id", selected.id);
-
-        if (delErr) {
-          Alert.alert("Fejl", "Kunne ikke opdatere holdet (sletning).");
-          console.log(delErr.message);
-          return;
-        }
+        if (delErr) throw delErr;
 
         if (newRosterEmails.length > 0) {
           const rows = newRosterEmails.map((email) => ({
             match_id: selected.id,
             email,
           }));
-
-          const { error: insErr } = await supabase
-            .from("match_roster")
-            .insert(rows);
-
-          if (insErr) {
-            Alert.alert("Fejl", "Kunne ikke opdatere holdet (indsættelse).");
-            console.log(insErr.message);
-            return;
-          }
-        }
-      }
-
-      // 2) Opdatér roster afhængigt af signup_mode
-      //    Hvis kampen IKKE er preselected → ryd roster
-      if (newSignupMode !== "preselected") {
-        const { error: delErr } = await supabase
-          .from("match_roster")
-          .delete()
-          .eq("match_id", selected.id);
-
-        if (delErr) throw delErr;
-      } else {
-        // Kampen skal have roster = rosterEmails
-        // Ryd først eksisterende
-        const { error: delErr } = await supabase
-          .from("match_roster")
-          .delete()
-          .eq("match_id", selected.id);
-        if (delErr) throw delErr;
-
-        if (rosterEmails.length > 0) {
-          const rows = rosterEmails.map((email) => ({
-            match_id: selected.id,
-            email,
-          }));
-
           const { error: insErr } = await supabase
             .from("match_roster")
             .insert(rows);
@@ -510,7 +369,7 @@ export default function AdminMatchesScreen() {
         }
       }
 
-      // 3) Opdatér lokal state
+      // 3) opdatér lokal state
       setMatches((prev) =>
         prev.map((m) =>
           m.id === selected.id
@@ -571,13 +430,11 @@ export default function AdminMatchesScreen() {
     );
   };
 
-  // Ikke admin → vis lille besked
+  // ikke admin
   if (isAdmin === false) {
     return (
       <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
-        <Text style={styles.textSoft}>
-          Kun admins kan se og redigere kampe.
-        </Text>
+        <Text style={styles.textSoft}>Kun admins kan se og redigere kampe.</Text>
       </View>
     );
   }
@@ -611,16 +468,18 @@ export default function AdminMatchesScreen() {
               return (
                 <Pressable
                   key={m.id}
-                  onPress={() => { 
-                    setSelected(m);
-                    loadMatchAuxData(m);
-                  }}
+                  onPress={() => setSelected(m)}
                   style={[
                     styles.matchRow,
                     isSelected && styles.matchRowActive,
                   ]}
                 >
-                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.matchTeam} numberOfLines={1}>
                         {m.team_name}
@@ -638,7 +497,12 @@ export default function AdminMatchesScreen() {
                       ) : null}
                     </View>
 
-                    <View style={{ alignItems: "flex-end", justifyContent: "space-between" }}>
+                    <View
+                      style={{
+                        alignItems: "flex-end",
+                        justifyContent: "space-between",
+                      }}
+                    >
                       <View
                         style={[
                           styles.homeAwayPill,
@@ -650,8 +514,8 @@ export default function AdminMatchesScreen() {
                         </Text>
                       </View>
 
-                      {/* 👇 signup_mode badge */}
-                      <View style={[styles.signupPill]}>
+                      {/* signup-mode badge */}
+                      <View style={styles.signupPill}>
                         <Text style={styles.signupPillText}>
                           {signupModeLabel(m.signup_mode)}
                         </Text>
@@ -671,454 +535,389 @@ export default function AdminMatchesScreen() {
           </ScrollView>
         )}
 
-        {/* Edit-panel i bunden, hvis kamp valgt */}
+        {/* edit-panel */}
         {selected && (
-        <View style={styles.editPanel}>
+          <View style={styles.editPanel}>
             <Text style={styles.editTitle}>Rediger kamp</Text>
-
-            {/* Lille meta-linje med hold + dato/tid */}
             <Text style={styles.editMeta}>
-            {selected.team_name} · {formatStart(selected.start_at)}
+              {selected.team_name} · {formatStart(selected.start_at)}
             </Text>
 
-            {/* Hvis kampen er LÅST → frigiv som */}
-            {selected.signup_mode === "locked" && (
-              <>
-                <Text style={styles.editLabel}>Frigiv som:</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    onPress={() => setEditSignupMode("availability")}
-                    style={[
-                      styles.chip,
-                      editSignupMode === "availability" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editSignupMode === "availability" && styles.chipTextActive,
-                      ]}
-                    >
-                      Klarmelding
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => setEditSignupMode("preselected")}
-                    style={[
-                      styles.chip,
-                      editSignupMode === "preselected" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editSignupMode === "preselected" && styles.chipTextActive,
-                      ]}
-                    >
-                      Sæt hold
-                    </Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-
-            {/* Selve felterne gøres scrollbare */}
             <ScrollView
-            style={{ maxHeight: 260 }}
-            contentContainerStyle={{ paddingBottom: 8 }}
-            showsVerticalScrollIndicator={false}
+              style={{ maxHeight: 280 }}
+              contentContainerStyle={{ paddingBottom: 8 }}
+              showsVerticalScrollIndicator={false}
             >
-            {/* Liga */}
-            <Text style={styles.editLabel}>Liga</Text>
-            <TextInputLike
+              {/* Liga */}
+              <Text style={styles.editLabel}>Liga</Text>
+              <TextInputLike
                 value={editLeague}
                 onChangeText={setEditLeague}
                 placeholder="Fx Serie 3"
-            />
+              />
 
-            {/* Modstander */}
-            <Text style={styles.editLabel}>Modstander</Text>
-            <TextInputLike
+              {/* Modstander */}
+              <Text style={styles.editLabel}>Modstander</Text>
+              <TextInputLike
                 value={editOpponent}
                 onChangeText={setEditOpponent}
                 placeholder="Fx BK Frem"
-            />
+              />
 
-            {/* Bane (hjemme/ude) */}
-            <Text style={styles.editLabel}>Bane</Text>
-            <View style={styles.chipRow}>
+              {/* Bane */}
+              <Text style={styles.editLabel}>Bane</Text>
+              <View style={styles.chipRow}>
                 <Pressable
-                onPress={() => setEditIsHome(true)}
-                style={[
+                  onPress={() => setEditIsHome(true)}
+                  style={[
                     styles.chip,
                     editIsHome && styles.chipActive,
-                ]}
+                  ]}
                 >
-                <Text
+                  <Text
                     style={[
-                    styles.chipText,
-                    editIsHome && styles.chipTextActive,
+                      styles.chipText,
+                      editIsHome && styles.chipTextActive,
                     ]}
-                >
+                  >
                     Hjemme
-                </Text>
+                  </Text>
                 </Pressable>
 
                 <Pressable
-                onPress={() => setEditIsHome(false)}
-                style={[
+                  onPress={() => setEditIsHome(false)}
+                  style={[
                     styles.chip,
                     !editIsHome && styles.chipActive,
-                ]}
+                  ]}
                 >
-                <Text
+                  <Text
                     style={[
-                    styles.chipText,
-                    !editIsHome && styles.chipTextActive,
+                      styles.chipText,
+                      !editIsHome && styles.chipTextActive,
                     ]}
-                >
+                  >
                     Ude
-                </Text>
+                  </Text>
                 </Pressable>
-            </View>
+              </View>
 
-            {/* Type */}
-            <Text style={styles.editLabel}>Type</Text>
-            <TextInputLike
+              {/* Type */}
+              <Text style={styles.editLabel}>Type</Text>
+              <TextInputLike
                 value={editType}
                 onChangeText={setEditType}
                 placeholder="Fx Træningskamp, Turnering"
-            />
+              />
 
-            {/* Status */}
-            <Text style={styles.editLabel}>Status</Text>
-            <View style={styles.chipRow}>
+              {/* Status */}
+              <Text style={styles.editLabel}>Status</Text>
+              <View style={styles.chipRow}>
                 <Pressable
-                onPress={() => setEditStatus("planned")}
-                style={[
+                  onPress={() => setEditStatus("planned")}
+                  style={[
                     styles.chip,
                     editStatus === "planned" && styles.chipActive,
-                ]}
+                  ]}
                 >
-                <Text
+                  <Text
                     style={[
-                    styles.chipText,
-                    editStatus === "planned" && styles.chipTextActive,
+                      styles.chipText,
+                      editStatus === "planned" && styles.chipTextActive,
                     ]}
-                >
+                  >
                     Planlagt
-                </Text>
+                  </Text>
                 </Pressable>
 
                 <Pressable
-                onPress={() => setEditStatus("played")}
-                style={[
+                  onPress={() => setEditStatus("played")}
+                  style={[
                     styles.chip,
                     editStatus === "played" && styles.chipActive,
-                ]}
+                  ]}
                 >
-                <Text
+                  <Text
                     style={[
-                    styles.chipText,
-                    editStatus === "played" && styles.chipTextActive,
+                      styles.chipText,
+                      editStatus === "played" && styles.chipTextActive,
                     ]}
-                >
+                  >
                     Spillet
-                </Text>
+                  </Text>
                 </Pressable>
 
                 <Pressable
-                onPress={() => setEditStatus("cancelled")}
-                style={[
+                  onPress={() => setEditStatus("cancelled")}
+                  style={[
                     styles.chip,
                     editStatus === "cancelled" && styles.chipActive,
-                ]}
+                  ]}
                 >
-                <Text
+                  <Text
                     style={[
-                    styles.chipText,
-                    editStatus === "cancelled" && styles.chipTextActive,
+                      styles.chipText,
+                      editStatus === "cancelled" && styles.chipTextActive,
                     ]}
-                >
+                  >
                     Aflyst
-                </Text>
+                  </Text>
                 </Pressable>
-            </View>
+              </View>
 
-            {/* Note */}
-            <Text style={styles.editLabel}>Note</Text>
-            <TextInputLike
+              {/* Note */}
+              <Text style={styles.editLabel}>Note</Text>
+              <TextInputLike
                 value={editNote}
                 onChangeText={setEditNote}
                 placeholder="Ekstra info til kampen"
                 multiline
-            />
+              />
 
-            {/* --- Signup / roster logik --- */}
-            {selected.signup_mode === "locked" && (
-              <>
-                <Text style={styles.editLabel}>Frigiv som:</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    onPress={() => setReleaseMode("availability")}
-                    style={[
-                      styles.chip,
-                      releaseMode === "availability" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
+              {/* --- signup / roster UI --- */}
+
+              {/* LÅST → vælg frigiv som */}
+              {selected.signup_mode === "locked" && (
+                <>
+                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
+                    Frigiv som:
+                  </Text>
+                  <View style={styles.chipRow}>
+                    <Pressable
+                      onPress={() => setEditSignupMode("availability")}
                       style={[
-                        styles.chipText,
-                        releaseMode === "availability" && styles.chipTextActive,
+                        styles.chip,
+                        editSignupMode === "availability" && styles.chipActive,
                       ]}
                     >
-                      Klarmelding
-                    </Text>
-                  </Pressable>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          editSignupMode === "availability" &&
+                            styles.chipTextActive,
+                        ]}
+                      >
+                        Klarmelding
+                      </Text>
+                    </Pressable>
 
-                  <Pressable
-                    onPress={() => setReleaseMode("preselected")}
-                    style={[
-                      styles.chip,
-                      releaseMode === "preselected" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
+                    <Pressable
+                      onPress={() => setEditSignupMode("preselected")}
                       style={[
-                        styles.chipText,
-                        releaseMode === "preselected" && styles.chipTextActive,
+                        styles.chip,
+                        editSignupMode === "preselected" && styles.chipActive,
                       ]}
                     >
-                      Sæt hold
-                    </Text>
-                  </Pressable>
-                </View>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          editSignupMode === "preselected" &&
+                            styles.chipTextActive,
+                        ]}
+                      >
+                        Sæt hold
+                      </Text>
+                    </Pressable>
+                  </View>
 
-                {/* Hvis man vil sætte hold direkte fra låst */}
-                {releaseMode === "preselected" && (
-                  <>
-                    <Text style={[styles.editLabel, { marginTop: 6 }]}>
-                      Vælg spillere til kampen
+                  {editSignupMode === "preselected" && (
+                    <>
+                      <Text style={[styles.editLabel, { marginTop: 8 }]}>
+                        Udtagne spillere
+                      </Text>
+                      {teamPlayersLoading ? (
+                        <Text style={styles.textSoft}>Henter spillere...</Text>
+                      ) : teamPlayers.length === 0 ? (
+                        <Text style={styles.textSoft}>
+                          Ingen spillere tilknyttet holdet.
+                        </Text>
+                      ) : (
+                        <View style={{ marginTop: 4, gap: 6 }}>
+                          {teamPlayers.map((p) => {
+                            const email = (p.email || "").toLowerCase();
+                            const isSelected = editSelectedRoster.includes(email);
+
+                            return (
+                              <Pressable
+                                key={email}
+                                onPress={() =>
+                                  setEditSelectedRoster((prev) =>
+                                    prev.includes(email)
+                                      ? prev.filter((e) => e !== email)
+                                      : [...prev, email]
+                                  )
+                                }
+                                style={[
+                                  styles.rosterRow,
+                                  isSelected && styles.rosterRowActive,
+                                ]}
+                              >
+                                <Text style={styles.rosterName}>
+                                  {p.name ?? p.email}
+                                </Text>
+                                {isSelected && (
+                                  <Ionicons
+                                    name="checkmark-circle"
+                                    size={16}
+                                    color={COLORS.accent}
+                                  />
+                                )}
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* PRESELECTED → redigér udtagne spillere */}
+              {selected.signup_mode === "preselected" && (
+                <>
+                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
+                    Udtagne spillere
+                  </Text>
+                  {teamPlayersLoading ? (
+                    <Text style={styles.textSoft}>Henter spillere...</Text>
+                  ) : teamPlayers.length === 0 ? (
+                    <Text style={styles.textSoft}>
+                      Ingen spillere tilknyttet holdet.
                     </Text>
-                    {teamPlayersLoading ? (
-                      <Text style={styles.textSoft}>Henter spillere...</Text>
-                    ) : teamPlayers.length === 0 ? (
-                      <Text style={styles.textSoft}>Ingen spillere på holdet.</Text>
-                    ) : (
-                      teamPlayers.map((p) => {
+                  ) : (
+                    <View style={{ marginTop: 4, gap: 6 }}>
+                      {teamPlayers.map((p) => {
                         const email = (p.email || "").toLowerCase();
-                        const selectedHere = rosterEmails.includes(email);
+                        const isSelected = editSelectedRoster.includes(email);
+
                         return (
                           <Pressable
                             key={email}
                             onPress={() =>
-                              setRosterEmails((prev) =>
+                              setEditSelectedRoster((prev) =>
                                 prev.includes(email)
                                   ? prev.filter((e) => e !== email)
                                   : [...prev, email]
                               )
                             }
                             style={[
-                              styles.matchRow,
-                              selectedHere && styles.matchRowActive,
+                              styles.rosterRow,
+                              isSelected && styles.rosterRowActive,
                             ]}
                           >
-                            <Text style={styles.matchOpponent}>
+                            <Text style={styles.rosterName}>
                               {p.name ?? p.email}
                             </Text>
+                            {isSelected && (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={16}
+                                color={COLORS.accent}
+                              />
+                            )}
                           </Pressable>
                         );
-                      })
-                    )}
-                  </>
-                )}
-              </>
-            )}
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
 
-            {selected.signup_mode === "preselected" && (
-              <>
-                <Text style={[styles.editLabel, { marginTop: 8 }]}>
-                  Udtagede spillere
-                </Text>
-                {teamPlayersLoading ? (
-                  <Text style={styles.textSoft}>Henter spillere...</Text>
-                ) : teamPlayers.length === 0 ? (
-                  <Text style={styles.textSoft}>Ingen spillere på holdet.</Text>
-                ) : (
-                  teamPlayers.map((p) => {
-                    const email = (p.email || "").toLowerCase();
-                    const selectedHere = rosterEmails.includes(email);
-                    return (
-                      <Pressable
-                        key={email}
-                        onPress={() =>
-                          setRosterEmails((prev) =>
-                            prev.includes(email)
-                              ? prev.filter((e) => e !== email)
-                              : [...prev, email]
-                          )
-                        }
-                        style={[
-                          styles.matchRow,
-                          selectedHere && styles.matchRowActive,
-                        ]}
-                      >
-                        <Text style={styles.matchOpponent}>
-                          {p.name ?? p.email}
-                        </Text>
-                      </Pressable>
-                    );
-                  })
-                )}
-              </>
-            )}
- 
-            {selected.signup_mode === "availability" && (
-              <>
-                <Text style={styles.editLabel}>Klarmeldte spillere</Text>
-                {readyPlayers.length === 0 ? (
-                  <Text style={styles.textSoft}>
-                    Ingen spillere har meldt sig klar endnu.
+              {/* AVAILABILITY → vis klarmeldte og lad admin vælge hvem der udtages */}
+              {selected.signup_mode === "availability" && (
+                <>
+                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
+                    Klarmeldte spillere
                   </Text>
-                ) : (
-                  <View style={{ marginTop: 4, gap: 6 }}>
-                    {readyPlayers.map((p) => {
-                      const email = p.email.toLowerCase();
-                      const isSelected = editSelectedRoster.includes(email);
+                  {readyPlayers.length === 0 ? (
+                    <Text style={styles.textSoft}>
+                      Ingen spillere har meldt sig klar endnu.
+                    </Text>
+                  ) : (
+                    <View style={{ marginTop: 4, gap: 6 }}>
+                      {readyPlayers.map((p) => {
+                        const email = (p.email || "").toLowerCase();
+                        const isSelected = editSelectedRoster.includes(email);
 
-                      return (
-                        <Pressable
-                          key={email}
-                          onPress={() =>
-                            setEditSelectedRoster((prev) =>
-                              prev.includes(email)
-                                ? prev.filter((e) => e !== email)
-                                : [...prev, email]
-                            )
-                          }
-                          style={[
-                            styles.rosterRow,
-                            isSelected && styles.rosterRowActive,
-                          ]}
-                        >
-                          <Text style={styles.rosterName}>
-                            {p.name ?? p.email}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={16}
-                              color={COLORS.accent}
-                            />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
-                <Text style={[styles.textSoft, { marginTop: 4 }]}>
-                  Når du gemmer, bliver de valgte spillere sat som udtagne til kampen.
-                </Text>
-              </>
-            )}
-
-                        {/* Udtagede spillere / sæt hold */}
-            {(
-              // Locked + valgt "Sæt hold"
-              (selected.signup_mode === "locked" && editSignupMode === "preselected") ||
-              // Kampen er i forvejen "Sæt hold"
-              selected.signup_mode === "preselected"
-            ) && (
-              <>
-                <Text style={styles.editLabel}>Udtagne spillere</Text>
-                {teamPlayers.length === 0 ? (
-                  <Text style={styles.textSoft}>
-                    Ingen spillere tilknyttet holdet endnu.
+                        return (
+                          <Pressable
+                            key={email}
+                            onPress={() =>
+                              setEditSelectedRoster((prev) =>
+                                prev.includes(email)
+                                  ? prev.filter((e) => e !== email)
+                                  : [...prev, email]
+                              )
+                            }
+                            style={[
+                              styles.rosterRow,
+                              isSelected && styles.rosterRowActive,
+                            ]}
+                          >
+                            <Text style={styles.rosterName}>
+                              {p.name ?? p.email}
+                            </Text>
+                            {isSelected && (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={16}
+                                color={COLORS.accent}
+                              />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                  <Text style={[styles.textSoft, { marginTop: 4 }]}>
+                    Når du gemmer, bliver de valgte spillere sat som udtagne til
+                    kampen.
                   </Text>
-                ) : (
-                  <View style={{ marginTop: 4, gap: 6 }}>
-                    {teamPlayers.map((p) => {
-                      const email = p.email.toLowerCase();
-                      const isSelected = editSelectedRoster.includes(email);
-
-                      return (
-                        <Pressable
-                          key={email}
-                          onPress={() =>
-                            setEditSelectedRoster((prev) =>
-                              prev.includes(email)
-                                ? prev.filter((e) => e !== email)
-                                : [...prev, email]
-                            )
-                          }
-                          style={[
-                            styles.rosterRow,
-                            isSelected && styles.rosterRowActive,
-                          ]}
-                        >
-                          <Text style={styles.rosterName}>
-                            {p.name ?? p.email}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={16}
-                              color={COLORS.accent}
-                            />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
-              </>
-            )}
-
+                </>
+              )}
             </ScrollView>
 
-            {/* Knapperne står fast under scrolleren */}
+            {/* knapper */}
             <View style={{ marginTop: 12, gap: 8 }}>
-            <Pressable
+              <Pressable
                 onPress={saveChanges}
                 disabled={saving || deleting}
                 style={[
-                styles.primaryButton,
-                (saving || deleting) && { opacity: 0.7 },
+                  styles.primaryButton,
+                  (saving || deleting) && { opacity: 0.7 },
                 ]}
-            >
+              >
                 {saving ? (
-                <ActivityIndicator size="small" color={COLORS.bg} />
+                  <ActivityIndicator size="small" color={COLORS.bg} />
                 ) : (
-                <Text style={styles.primaryButtonText}>Gem ændringer</Text>
+                  <Text style={styles.primaryButtonText}>Gem ændringer</Text>
                 )}
-            </Pressable>
+              </Pressable>
 
-            <Pressable
+              <Pressable
                 onPress={deleteMatch}
                 disabled={saving || deleting}
                 style={[
-                styles.dangerButton,
-                (saving || deleting) && { opacity: 0.7 },
+                  styles.dangerButton,
+                  (saving || deleting) && { opacity: 0.7 },
                 ]}
-            >
+              >
                 {deleting ? (
-                <ActivityIndicator size="small" color={COLORS.text} />
+                  <ActivityIndicator size="small" color={COLORS.text} />
                 ) : (
-                <Text style={styles.dangerButtonText}>Slet kamp</Text>
+                  <Text style={styles.dangerButtonText}>Slet kamp</Text>
                 )}
-            </Pressable>
+              </Pressable>
 
-            {/* ⭐ Luk uden at gemme */}
-            <Pressable
+              <Pressable
                 onPress={() => setSelected(null)}
                 disabled={saving || deleting}
                 style={styles.secondaryButton}
-            >
+              >
                 <Text style={styles.secondaryButtonText}>Luk uden at gemme</Text>
-            </Pressable>
+              </Pressable>
             </View>
-        </View>
+          </View>
         )}
       </View>
     </View>
@@ -1271,7 +1070,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-    editMeta: {
+  editMeta: {
     color: COLORS.textSoft,
     fontSize: 12,
     marginBottom: 6,
@@ -1325,7 +1124,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
-    rosterRow: {
+  rosterRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
