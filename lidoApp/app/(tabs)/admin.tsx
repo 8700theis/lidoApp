@@ -147,96 +147,6 @@ export default function AdminMatchesScreen() {
     setLoading(false);
   };
 
-  // hent ekstra data til valgt kamp
-  const loadSelectedMatchDetails = async (match: AdminMatch) => {
-    setTeamPlayersLoading(true);
-    try {
-      // 1) spillere på holdet
-      const { data: links, error: linksErr } = await supabase
-        .from("team_players")
-        .select("email")
-        .eq("team_id", match.team_id);
-
-      if (linksErr) {
-        console.log("team_players error", linksErr.message);
-        setTeamPlayers([]);
-        setReadyPlayers([]);
-        setEditSelectedRoster([]);
-        return;
-      }
-
-      const emails = (links ?? []).map((l: any) =>
-        (l.email || "").toLowerCase()
-      );
-
-      let playersForTeam: { email: string; name: string | null }[] = [];
-      if (emails.length > 0) {
-        const { data: allowed, error: allowedErr } = await supabase
-          .from("allowed_users")
-          .select("email,name")
-          .in("email", emails);
-
-        if (!allowedErr && allowed) {
-          const map = new Map(
-            allowed.map((u: any) => [
-              (u.email || "").toLowerCase(),
-              { email: u.email, name: u.name },
-            ])
-          );
-          playersForTeam = emails
-            .map((e) => map.get(e))
-            .filter(Boolean) as { email: string; name: string | null }[];
-        }
-      }
-      setTeamPlayers(playersForTeam);
-
-      // 2) nuværende roster
-      const { data: rosterRows, error: rosterErr } = await supabase
-        .from("match_roster")
-        .select("email")
-        .eq("match_id", match.id);
-
-      let roster: string[] = [];
-      if (!rosterErr && rosterRows) {
-        roster = rosterRows
-          .map((r: any) => (r.email || "").toLowerCase())
-          .filter(Boolean);
-      }
-
-      // 3) klarmeldte spillere (match_responses)
-      const { data: respRows, error: respErr } = await supabase
-        .from("match_responses")
-        .select("user_email,status")
-        .eq("match_id", match.id)
-        .eq("status", "ready");
-
-      let readyList: { email: string; name: string | null }[] = [];
-      if (!respErr && respRows && respRows.length > 0) {
-        const readyEmails = respRows
-          .map((r: any) => (r.user_email || "").toLowerCase())
-          .filter(Boolean);
-
-        readyList = playersForTeam.filter((p) =>
-          readyEmails.includes((p.email || "").toLowerCase())
-        );
-      }
-      setReadyPlayers(readyList);
-
-      // 4) signup mode + initial udvalg
-      setEditSignupMode(match.signup_mode);
-
-      if (match.signup_mode === "preselected") {
-        // start med nuværende roster
-        setEditSelectedRoster(roster);
-      } else {
-        // availability / locked → start tom (admin vælger)
-        setEditSelectedRoster([]);
-      }
-    } finally {
-      setTeamPlayersLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (isAdmin) {
       loadMatches();
@@ -253,20 +163,109 @@ export default function AdminMatchesScreen() {
   );
 
   // sync edit-felter når selected ændres
+  // Når man vælger en kamp → sync edit-felter + hjælpe-data
   useEffect(() => {
     if (!selected) return;
 
     setEditLeague(selected.league ?? "");
     setEditOpponent(selected.opponent ?? "");
     setEditNote(selected.notes ?? "");
+
     setEditIsHome(selected.is_home);
     setEditType(selected.match_type ?? "");
+
     const s = (selected.status || "planned") as "planned" | "played" | "cancelled";
     setEditStatus(s);
 
-    // hent spillere / roster / klarmeldte
     loadSelectedMatchDetails(selected);
   }, [selected]);
+
+  const loadSelectedMatchDetails = async (match: AdminMatch) => {
+    // 1) Hent spillere på holdet
+    const { data: links, error: linksErr } = await supabase
+      .from("team_players")
+      .select("email")
+      .eq("team_id", match.team_id);
+
+    if (linksErr) {
+      console.log("team_players error", linksErr.message);
+      return;
+    }
+
+    const emails = (links ?? [])
+      .map((l: any) => (l.email || "").toLowerCase())
+      .filter(Boolean);
+
+    let playersForTeam: Array<{ email: string; name: string | null }> = [];
+
+    if (emails.length > 0) {
+      const { data: allowed, error: allowedErr } = await supabase
+        .from("allowed_users")
+        .select("email,name")
+        .in("email", emails);
+
+      if (!allowedErr && allowed) {
+        const map = new Map(
+          allowed.map((u: any) => [
+            (u.email || "").toLowerCase(),
+            { email: (u.email || "").toLowerCase(), name: u.name },
+          ])
+        );
+
+        playersForTeam = emails
+          .map((e) => map.get(e))
+          .filter(Boolean) as Array<{ email: string; name: string | null }>;
+      }
+    }
+
+    setTeamPlayers(playersForTeam);
+
+    // 2) Hent nuværende roster (udtagne spillere)
+    const { data: rosterRows, error: rosterErr } = await supabase
+      .from("match_roster")
+      .select("email")
+      .eq("match_id", match.id);
+
+    let rosterEmails: string[] = [];
+    if (!rosterErr && rosterRows) {
+      rosterEmails = rosterRows
+        .map((r: any) => (r.email || "").toLowerCase())
+        .filter(Boolean);
+    }
+
+    // 3) Hent spillere der har meldt sig "klar"
+    const { data: respRows, error: respErr } = await supabase
+      .from("match_responses")
+      .select("user_email")
+      .eq("match_id", match.id)
+      .eq("status", "ready");
+
+    let readyEmails: string[] = [];
+    if (!respErr && respRows) {
+      // ⭐ FEJLEN HER: sørg for lowercase, så det matcher p.email
+      readyEmails = respRows
+        .map((r: any) => (r.user_email || "").toLowerCase())
+        .filter(Boolean);
+    }
+
+    const readyList: Array<{ email: string; name: string | null }> =
+      playersForTeam.filter((p) => readyEmails.includes(p.email));
+
+    setReadyPlayers(readyList);
+
+    // 4) UI-mode
+    setEditSignupMode(match.signup_mode);
+
+    // 5) Init hvilke emails der er valgt i UI, afhængigt af signup_mode
+    if (match.signup_mode === "preselected") {
+      // kamp hvor holdet allerede er sat → marker rosteren
+      setEditSelectedRoster(rosterEmails);
+    } else {
+      // locked eller availability → start med tom selection,
+      // admin vælger manuelt hvem der sættes på holdet
+      setEditSelectedRoster([]);
+    }
+  };
 
   const formatStart = (iso: string) => {
     if (!iso) return "";
@@ -302,38 +301,37 @@ export default function AdminMatchesScreen() {
     const match_type = editType.trim() || null;
     const status = editStatus;
 
-    // beregn ny signup_mode + roster
+    // --- Beregn nyt signup_mode + roster ---
     let newSignupMode: "availability" | "preselected" | "locked" =
       selected.signup_mode;
-    let newRosterEmails: string[] | null = null; // null = rør ikke roster
+    let newRosterEmails: string[] = [];
 
     if (selected.signup_mode === "locked") {
-      // frigiv fra låst
       if (editSignupMode === "availability") {
         newSignupMode = "availability";
-        newRosterEmails = []; // sørg for at roster er tom
+        newRosterEmails = [];
       } else if (editSignupMode === "preselected") {
         newSignupMode = "preselected";
         newRosterEmails = editSelectedRoster;
       }
-    } else if (selected.signup_mode === "preselected") {
-      // allerede "sæt hold" → bare opdatér listen
-      newSignupMode = "preselected";
-      newRosterEmails = editSelectedRoster;
     } else if (selected.signup_mode === "availability") {
-      // fra klarmelding → hvis admin har valgt nogle spillere, skifter vi til "sæt hold"
+      // Hvis admin har valgt nogle klarmeldte → kamp går over til "Sæt hold"
       if (editSelectedRoster.length > 0) {
         newSignupMode = "preselected";
         newRosterEmails = editSelectedRoster;
       } else {
         newSignupMode = "availability";
-        newRosterEmails = null; // ingen ændring på roster (der er alligevel ingen)
+        newRosterEmails = [];
       }
+    } else if (selected.signup_mode === "preselected") {
+      newSignupMode = "preselected";
+      newRosterEmails = editSelectedRoster;
     }
 
     setSaving(true);
+
     try {
-      // 1) opdatér kampen
+      // 1) Opdatér kampen
       const { error: matchErr } = await supabase
         .from("matches")
         .update({
@@ -349,27 +347,27 @@ export default function AdminMatchesScreen() {
 
       if (matchErr) throw matchErr;
 
-      // 2) opdatér roster hvis nødvendigt
-      if (newRosterEmails !== null) {
-        const { error: delErr } = await supabase
-          .from("match_roster")
-          .delete()
-          .eq("match_id", selected.id);
-        if (delErr) throw delErr;
+      // 2) Opdatér match_roster
+      const { error: delErr } = await supabase
+        .from("match_roster")
+        .delete()
+        .eq("match_id", selected.id);
 
-        if (newRosterEmails.length > 0) {
-          const rows = newRosterEmails.map((email) => ({
-            match_id: selected.id,
-            email,
-          }));
-          const { error: insErr } = await supabase
-            .from("match_roster")
-            .insert(rows);
-          if (insErr) throw insErr;
-        }
+      if (delErr) throw delErr;
+
+      if (newSignupMode === "preselected" && newRosterEmails.length > 0) {
+        const rows = newRosterEmails.map((email) => ({
+          match_id: selected.id,
+          email,
+        }));
+        const { error: insErr } = await supabase
+          .from("match_roster")
+          .insert(rows);
+
+        if (insErr) throw insErr;
       }
 
-      // 3) opdatér lokal state
+      // 3) Opdatér lokal state
       setMatches((prev) =>
         prev.map((m) =>
           m.id === selected.id
@@ -535,16 +533,61 @@ export default function AdminMatchesScreen() {
           </ScrollView>
         )}
 
-        {/* edit-panel */}
+        {/* Edit-panel i bunden, hvis kamp valgt */}
         {selected && (
           <View style={styles.editPanel}>
             <Text style={styles.editTitle}>Rediger kamp</Text>
+
+            {/* Lille meta-linje med hold + dato/tid */}
             <Text style={styles.editMeta}>
               {selected.team_name} · {formatStart(selected.start_at)}
             </Text>
 
+            {/* Hvis kampen er LÅST → vælg hvordan den skal frigives */}
+            {selected.signup_mode === "locked" && (
+              <>
+                <Text style={styles.editLabel}>Frigiv som:</Text>
+                <View style={styles.chipRow}>
+                  <Pressable
+                    onPress={() => setEditSignupMode("availability")}
+                    style={[
+                      styles.chip,
+                      editSignupMode === "availability" && styles.chipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        editSignupMode === "availability" && styles.chipTextActive,
+                      ]}
+                    >
+                      Klarmelding
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setEditSignupMode("preselected")}
+                    style={[
+                      styles.chip,
+                      editSignupMode === "preselected" && styles.chipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        editSignupMode === "preselected" && styles.chipTextActive,
+                      ]}
+                    >
+                      Sæt hold
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+            {/* Selve felterne gøres scrollbare */}
             <ScrollView
-              style={{ maxHeight: 280 }}
+              style={{ maxHeight: 260 }}
               contentContainerStyle={{ paddingBottom: 8 }}
               showsVerticalScrollIndicator={false}
             >
@@ -564,7 +607,7 @@ export default function AdminMatchesScreen() {
                 placeholder="Fx BK Frem"
               />
 
-              {/* Bane */}
+              {/* Bane (hjemme/ude) */}
               <Text style={styles.editLabel}>Bane</Text>
               <View style={styles.chipRow}>
                 <Pressable
@@ -674,161 +717,12 @@ export default function AdminMatchesScreen() {
                 multiline
               />
 
-              {/* --- signup / roster UI --- */}
+              {/* --- Signup / roster logik --- */}
 
-              {/* LÅST → vælg frigiv som */}
-              {selected.signup_mode === "locked" && (
-                <>
-                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
-                    Frigiv som:
-                  </Text>
-                  <View style={styles.chipRow}>
-                    <Pressable
-                      onPress={() => setEditSignupMode("availability")}
-                      style={[
-                        styles.chip,
-                        editSignupMode === "availability" && styles.chipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          editSignupMode === "availability" &&
-                            styles.chipTextActive,
-                        ]}
-                      >
-                        Klarmelding
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setEditSignupMode("preselected")}
-                      style={[
-                        styles.chip,
-                        editSignupMode === "preselected" && styles.chipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          editSignupMode === "preselected" &&
-                            styles.chipTextActive,
-                        ]}
-                      >
-                        Sæt hold
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  {editSignupMode === "preselected" && (
-                    <>
-                      <Text style={[styles.editLabel, { marginTop: 8 }]}>
-                        Udtagne spillere
-                      </Text>
-                      {teamPlayersLoading ? (
-                        <Text style={styles.textSoft}>Henter spillere...</Text>
-                      ) : teamPlayers.length === 0 ? (
-                        <Text style={styles.textSoft}>
-                          Ingen spillere tilknyttet holdet.
-                        </Text>
-                      ) : (
-                        <View style={{ marginTop: 4, gap: 6 }}>
-                          {teamPlayers.map((p) => {
-                            const email = (p.email || "").toLowerCase();
-                            const isSelected = editSelectedRoster.includes(email);
-
-                            return (
-                              <Pressable
-                                key={email}
-                                onPress={() =>
-                                  setEditSelectedRoster((prev) =>
-                                    prev.includes(email)
-                                      ? prev.filter((e) => e !== email)
-                                      : [...prev, email]
-                                  )
-                                }
-                                style={[
-                                  styles.rosterRow,
-                                  isSelected && styles.rosterRowActive,
-                                ]}
-                              >
-                                <Text style={styles.rosterName}>
-                                  {p.name ?? p.email}
-                                </Text>
-                                {isSelected && (
-                                  <Ionicons
-                                    name="checkmark-circle"
-                                    size={16}
-                                    color={COLORS.accent}
-                                  />
-                                )}
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-
-              {/* PRESELECTED → redigér udtagne spillere */}
-              {selected.signup_mode === "preselected" && (
-                <>
-                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
-                    Udtagne spillere
-                  </Text>
-                  {teamPlayersLoading ? (
-                    <Text style={styles.textSoft}>Henter spillere...</Text>
-                  ) : teamPlayers.length === 0 ? (
-                    <Text style={styles.textSoft}>
-                      Ingen spillere tilknyttet holdet.
-                    </Text>
-                  ) : (
-                    <View style={{ marginTop: 4, gap: 6 }}>
-                      {teamPlayers.map((p) => {
-                        const email = (p.email || "").toLowerCase();
-                        const isSelected = editSelectedRoster.includes(email);
-
-                        return (
-                          <Pressable
-                            key={email}
-                            onPress={() =>
-                              setEditSelectedRoster((prev) =>
-                                prev.includes(email)
-                                  ? prev.filter((e) => e !== email)
-                                  : [...prev, email]
-                              )
-                            }
-                            style={[
-                              styles.rosterRow,
-                              isSelected && styles.rosterRowActive,
-                            ]}
-                          >
-                            <Text style={styles.rosterName}>
-                              {p.name ?? p.email}
-                            </Text>
-                            {isSelected && (
-                              <Ionicons
-                                name="checkmark-circle"
-                                size={16}
-                                color={COLORS.accent}
-                              />
-                            )}
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  )}
-                </>
-              )}
-
-              {/* AVAILABILITY → vis klarmeldte og lad admin vælge hvem der udtages */}
+              {/* 1) availability → vis klarmeldte spillere */}
               {selected.signup_mode === "availability" && (
                 <>
-                  <Text style={[styles.editLabel, { marginTop: 8 }]}>
-                    Klarmeldte spillere
-                  </Text>
+                  <Text style={styles.editLabel}>Klarmeldte spillere</Text>
                   {readyPlayers.length === 0 ? (
                     <Text style={styles.textSoft}>
                       Ingen spillere har meldt sig klar endnu.
@@ -836,7 +730,7 @@ export default function AdminMatchesScreen() {
                   ) : (
                     <View style={{ marginTop: 4, gap: 6 }}>
                       {readyPlayers.map((p) => {
-                        const email = (p.email || "").toLowerCase();
+                        const email = p.email.toLowerCase();
                         const isSelected = editSelectedRoster.includes(email);
 
                         return (
@@ -870,14 +764,107 @@ export default function AdminMatchesScreen() {
                     </View>
                   )}
                   <Text style={[styles.textSoft, { marginTop: 4 }]}>
-                    Når du gemmer, bliver de valgte spillere sat som udtagne til
-                    kampen.
+                    Når du gemmer, bliver de valgte spillere sat som udtagne til kampen.
                   </Text>
+                </>
+              )}
+
+              {/* 2) locked + valgt "Sæt hold" */}
+              {selected.signup_mode === "locked" && editSignupMode === "preselected" && (
+                <>
+                  <Text style={styles.editLabel}>Udtagne spillere</Text>
+                  {teamPlayers.length === 0 ? (
+                    <Text style={styles.textSoft}>
+                      Ingen spillere tilknyttet holdet endnu.
+                    </Text>
+                  ) : (
+                    <View style={{ marginTop: 4, gap: 6 }}>
+                      {teamPlayers.map((p) => {
+                        const email = p.email.toLowerCase();
+                        const isSelected = editSelectedRoster.includes(email);
+
+                        return (
+                          <Pressable
+                            key={email}
+                            onPress={() =>
+                              setEditSelectedRoster((prev) =>
+                                prev.includes(email)
+                                  ? prev.filter((e) => e !== email)
+                                  : [...prev, email]
+                              )
+                            }
+                            style={[
+                              styles.rosterRow,
+                              isSelected && styles.rosterRowActive,
+                            ]}
+                          >
+                            <Text style={styles.rosterName}>
+                              {p.name ?? p.email}
+                            </Text>
+                            {isSelected && (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={16}
+                                color={COLORS.accent}
+                              />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* 3) preselected → redigér udtagne spillere */}
+              {selected.signup_mode === "preselected" && (
+                <>
+                  <Text style={styles.editLabel}>Udtagne spillere</Text>
+                  {teamPlayers.length === 0 ? (
+                    <Text style={styles.textSoft}>
+                      Ingen spillere tilknyttet holdet endnu.
+                    </Text>
+                  ) : (
+                    <View style={{ marginTop: 4, gap: 6 }}>
+                      {teamPlayers.map((p) => {
+                        const email = p.email.toLowerCase();
+                        const isSelected = editSelectedRoster.includes(email);
+
+                        return (
+                          <Pressable
+                            key={email}
+                            onPress={() =>
+                              setEditSelectedRoster((prev) =>
+                                prev.includes(email)
+                                  ? prev.filter((e) => e !== email)
+                                  : [...prev, email]
+                              )
+                            }
+                            style={[
+                              styles.rosterRow,
+                              isSelected && styles.rosterRowActive,
+                            ]}
+                          >
+                            <Text style={styles.rosterName}>
+                              {p.name ?? p.email}
+                            </Text>
+                            {isSelected && (
+                              <Ionicons
+                                name="checkmark-circle"
+                                size={16}
+                                color={COLORS.accent}
+                              />
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                 </>
               )}
             </ScrollView>
 
-            {/* knapper */}
+            {/* Knapperne står fast under scrolleren */}
             <View style={{ marginTop: 12, gap: 8 }}>
               <Pressable
                 onPress={saveChanges}
