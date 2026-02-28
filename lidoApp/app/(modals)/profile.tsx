@@ -34,6 +34,7 @@ type NotificationRow = {
   match_id: string | null;
   is_read: boolean;
   created_at: string;
+  needs_response?: boolean;
 };
 
 // ✅ Fixer TS bøvl med Ionicons-name
@@ -42,6 +43,7 @@ type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 export default function ProfileModal() {
   const { session } = useSession();
   const email = session?.user?.email?.toLowerCase() ?? null;
+  const userId = session?.user?.id ?? null;
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -128,38 +130,82 @@ export default function ProfileModal() {
   };
 
   const loadNotifications = async () => {
-      if (!email) {
+    if (!email) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    try {
+      setNotificationsLoading(true);
+
+      const { data, error } = await supabase
+        .from("notifications")
+        .select(
+          "id,user_email,type,title,body,match_id,is_read,created_at"
+        )
+        .eq("user_email", email)
+        .in("type", ["match_invite", "match_selected", "team_message"])
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (error) {
+        console.log("loadNotifications error:", error.message);
         setNotifications([]);
         setUnreadCount(0);
         return;
       }
 
-      try {
-        setNotificationsLoading(true);
+      let rows = (data ?? []) as NotificationRow[];
 
-        const { data, error } = await supabase
-          .from("notifications")
-          .select(
-            "id,user_email,type,title,body,match_id,is_read,created_at"
-          )
-          .eq("user_email", email)
-          .order("created_at", { ascending: false })
-          .limit(50);
+      // Find alle klarmeldings-notifikationer med match_id
+      const inviteMatchIds = rows
+        .filter((n) => n.match_id && n.type === "match_invite")
+        .map((n) => n.match_id as string);
 
-        if (error) {
-          console.log("loadNotifications error:", error.message);
-          setNotifications([]);
-          setUnreadCount(0);
-          return;
+      let responseMap: Record<string, "ready" | "not_ready" | null> = {};
+
+      if (userId && inviteMatchIds.length > 0) {
+        const { data: respRows, error: respErr } = await supabase
+          .from("match_responses")
+          .select("match_id,status")
+          .eq("user_id", userId)
+          .in("match_id", inviteMatchIds);
+
+        if (!respErr && respRows) {
+          respRows.forEach((r: any) => {
+            responseMap[r.match_id] =
+              r.status === "ready" || r.status === "not_ready"
+                ? (r.status as "ready" | "not_ready")
+                : null;
+          });
         }
-
-        const rows = (data ?? []) as NotificationRow[];
-        setNotifications(rows);
-        setUnreadCount(rows.filter((n) => !n.is_read).length);
-      } finally {
-        setNotificationsLoading(false);
       }
-    };
+
+      // Sæt needs_response = true hvis der ingen response er til den kamp
+      const withFlags = rows.map((r) => {
+        let needs = false;
+        if (r.type === "match_invite" && r.match_id) {
+          const s = responseMap[r.match_id];
+          needs = !s; // ingen svar endnu
+        }
+        return { ...r, needs_response: needs };
+      });
+
+      setNotifications(withFlags);
+      setUnreadCount(withFlags.filter((n) => !n.is_read).length);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+  }, [email]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [email]);
 
   useEffect(() => {
     loadNotifications();
@@ -201,12 +247,15 @@ export default function ProfileModal() {
       }
     }
 
-    // Hvis notifikationen peger på en kamp → gå til kampdetalje
-    if (notif.match_id) {
-      // Luk panelet og navigér til kampen
-      close();
-      router.push(`../matches/${notif.match_id}`);
+    // Hvis der ikke er match_id, er der intet at åbne
+    if (!notif.match_id) {
+      return;
     }
+
+    // Luk profil-modalen og åbn derefter kampdetaljen
+    close(() => {
+      router.push(`/match/${notif.match_id}`);
+    });
   };
 
   // Helper til at få badges for en vilkårlig bruger
@@ -413,7 +462,7 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
   }, [mode]);
 
 
-  const close = () => {
+  const close = (onClosed?: () => void) => {
     // reset UI så den altid åbner i main
     setMode("main");
 
@@ -428,7 +477,12 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
         duration: 180,
         useNativeDriver: true,
       }),
-    ]).start(() => router.dismiss());
+    ]).start(() => {
+      router.dismiss();
+      if (onClosed) {
+        onClosed();
+      }
+    });
   };
 
   useEffect(() => {
@@ -616,46 +670,169 @@ const getBadgesForUserOnTeam = (
       return;
     }
 
-    // Hvis vi har valgt "Sæt hold", skal der være mindst én spiller
-    if (signupMode === "preselected" && matchSelectedPlayers.length === 0) {
+    // Ved "sæt hold" / "locked" skal der være mindst én spiller
+    if (
+      (signupMode === "preselected" || signupMode === "locked") &&
+      matchSelectedPlayers.length === 0
+    ) {
       Alert.alert("Mangler", "Vælg mindst én spiller til kampen.");
       return;
     }
 
-    // "2026-03-14" + "11:00"
+    // matchDate: "2026-03-14", matchTime: "10:00"
     const isoString = `${matchDate}T${matchTime}:00`;
     const parsed = new Date(isoString);
 
     if (isNaN(parsed.getTime())) {
       Alert.alert(
         "Ugyldig dato/tid",
-        "Tjek at dato og tidspunkt er gyldigt (fx 2025-03-10 og 19:30)."
+        "Tjek at dato og tidspunkt er gyldigt (fx 2026-03-14 og 19:30)."
       );
       return;
     }
 
-    const preselectedEmails =
-      signupMode === "preselected"
-        ? matchSelectedPlayers.map((e) => e.toLowerCase().trim())
-        : null;
+    // Normaliser udtagne emails
+    const preselectedNormalized =
+      signupMode === "preselected" || signupMode === "locked"
+        ? matchSelectedPlayers
+            .map((e) => e.toLowerCase().trim())
+            .filter(Boolean)
+        : [];
+
+    // Lokalt tidspunkt i dansk timezone til tekst i notifikationerne
+    const local = parsed;
+
+    const dateStr = local
+      .toLocaleDateString("da-DK", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "Europe/Copenhagen",
+      })
+      .replace(/\./g, "-"); // 14-03-2026
+
+    const timeStr = local
+      .toLocaleTimeString("da-DK", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Europe/Copenhagen",
+      })
+      .replace(".", ":"); // 10:00
 
     setCreatingMatch(true);
     try {
+      // 1) Opret kampen via RPC (SQL’en sender ingen notifikationer)
       const { data, error } = await supabase.rpc("admin_create_match", {
         p_team_id: matchTeamId,
         p_start_at: parsed.toISOString(),
         p_is_home: matchIsHome,
         p_league: matchLeague || null,
-        p_opponent: matchOpponent,
+        p_opponent: matchOpponent.trim(),
         p_match_type: matchType || null,
         p_notes: matchNotes || null,
         p_signup_mode: signupMode,
-        p_preselected_emails: preselectedEmails,
+        p_preselected_emails:
+          preselectedNormalized.length > 0 ? preselectedNormalized : null,
       });
 
       if (error) {
         Alert.alert("Fejl", error.message);
         return;
+      }
+
+      const matchId = (data as any)?.id ?? null;
+
+      // 2) Send notifikationer fra klienten
+      try {
+        // Hent holdnavn + kaptajn + spillere
+        const [{ data: teamRow, error: teamErr }, { data: links, error: linksErr }] =
+          await Promise.all([
+            supabase
+              .from("teams")
+              .select("name,captain_email")
+              .eq("id", matchTeamId)
+              .single(),
+            supabase
+              .from("team_players")
+              .select("email")
+              .eq("team_id", matchTeamId),
+          ]);
+
+        if (!teamErr && !linksErr && teamRow) {
+          const teamName = teamRow.name ?? "dit hold";
+          const captainEmail = (teamRow.captain_email || "").toLowerCase();
+          const playerEmails = (links ?? [])
+            .map((l: any) => (l.email || "").toLowerCase())
+            .filter(Boolean);
+
+          const place = matchIsHome ? "Hjemme" : "Ude";
+
+          if (signupMode === "availability") {
+            // 🔴 Kun KLARMELDING – til hele holdet (spillere + kaptajn)
+            const allRecipients = Array.from(
+              new Set([...playerEmails, captainEmail].filter(Boolean))
+            );
+
+            if (allRecipients.length > 0) {
+              const title = `Ny kamp for ${teamName}`;
+              const body = `Der er oprettet en ny kamp: ${place} mod ${matchOpponent.trim()} den ${dateStr} kl. ${timeStr}. Gå ind i appen og klarmeld dig.`;
+
+              const rows = allRecipients.map((e) => ({
+                user_email: e,
+                type: "match_invite",
+                title,
+                body,
+                match_id: matchId,
+                is_read: false,
+              }));
+
+              const { error: notifErr } = await supabase
+                .from("notifications")
+                .insert(rows);
+
+              if (notifErr) {
+                console.log(
+                  "createMatch availability notifications error:",
+                  notifErr.message
+                );
+              }
+            }
+          } else if (signupMode === "preselected" || signupMode === "locked") {
+            // 🟢 Kun "Du er udtaget" – til de udtagne spillere
+            const recipients = preselectedNormalized;
+
+            if (recipients.length > 0) {
+              const title = "Du er udtaget";
+              const body = `Du er udtaget til kampen ${teamName} vs ${matchOpponent.trim()} den ${dateStr} kl. ${timeStr}.`;
+
+              const rows = recipients.map((e) => ({
+                user_email: e,
+                type: "match_selected",
+                title,
+                body,
+                match_id: matchId,
+                is_read: false,
+              }));
+
+              const { error: notifErr } = await supabase
+                .from("notifications")
+                .insert(rows);
+
+              if (notifErr) {
+                console.log(
+                  "createMatch preselected notifications error:",
+                  notifErr.message
+                );
+              }
+            }
+          }
+        }
+      } catch (notifUnexpected) {
+        console.log(
+          "createMatch notifications unexpected error:",
+          notifUnexpected
+        );
       }
 
       Alert.alert("Kamp oprettet ✅", "Kampen er nu oprettet for holdet.");
@@ -1198,7 +1375,7 @@ const grantAdminToPlayer = async () => {
           ]}
         />
 
-        <Pressable style={styles.overlayPress} onPress={close} />
+        <Pressable style={styles.overlayPress} onPress={() => close()} />
       </Animated.View>
 
       {/* Panel */}
@@ -1259,7 +1436,7 @@ const grantAdminToPlayer = async () => {
               </Text>
             </View>
 
-            <Pressable onPress={close} hitSlop={12} style={styles.iconButton}>
+            <Pressable onPress={() => close()} hitSlop={12} style={styles.iconButton}>
               <Ionicons name="close" size={20} color={COLORS.textSoft} />
             </Pressable>
           </View>
@@ -1269,25 +1446,33 @@ const grantAdminToPlayer = async () => {
           {mode === "main" ? (
             <>
               <View style={{ gap: 10 }}>
+                {/* Mail-rækken (uændret) */}
                 <View style={styles.row}>
                   <View style={styles.roleIcon}>
                     <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
                   </View>
-                  <Text style={styles.rowText} numberOfLines={1} ellipsizeMode="middle">
+                  <Text
+                    style={styles.rowText}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
                     {session?.user?.email ?? "—"}
                   </Text>
                 </View>
 
-                {/* Notifikationer – alle kan se */}
+                {/* Notifikationer – samme stil som mail, men klikbar */}
+                {/* Notifikationer */}
                 <Pressable
                   onPress={() => setMode("notifications")}
-                  style={styles.adminButton}
+                  style={styles.row}
                 >
-                  <Ionicons
-                    name="notifications-outline"
-                    size={18}
-                    color={COLORS.text}
-                  />
+                  <View style={styles.roleIcon}>
+                    <Ionicons
+                      name="notifications-outline"
+                      size={18}
+                      color={COLORS.accent}
+                    />
+                  </View>
                   <View
                     style={{
                       flexDirection: "row",
@@ -1295,7 +1480,7 @@ const grantAdminToPlayer = async () => {
                       flex: 1,
                     }}
                   >
-                    <Text style={styles.adminButtonText}>Notifikationer</Text>
+                    <Text style={styles.rowText}>Notifikationer</Text>
                     {unreadCount > 0 && (
                       <View style={styles.notifBadgeSmall}>
                         <Text style={styles.notifBadgeSmallText}>
@@ -1306,38 +1491,73 @@ const grantAdminToPlayer = async () => {
                   </View>
                 </Pressable>
 
-                {/* Admin-only */}
+                {/* Admin-only: Opret spiller */}
                 {!profileLoading && profile?.is_admin ? (
-                  <Pressable onPress={() => setMode("create")} style={styles.adminButton}>
-                    <Ionicons name="person-add-outline" size={18} color={COLORS.text} />
-                    <Text style={styles.adminButtonText}>Opret spiller</Text>
+                  <Pressable
+                    onPress={() => setMode("create")}
+                    style={styles.row}
+                  >
+                    <View style={styles.roleIcon}>
+                      <Ionicons
+                        name="person-add-outline"
+                        size={18}
+                        color={COLORS.text}
+                      />
+                    </View>
+                    <Text style={styles.rowText}>Opret spiller</Text>
                   </Pressable>
                 ) : null}
 
-                {/* Admin-only */}
+                {/* Admin-only: Spillere */}
                 {!profileLoading && profile?.is_admin ? (
-                  <Pressable onPress={() => setMode("players")} style={styles.adminButton}>
-                    <Ionicons name="people-outline" size={18} color={COLORS.text} />
-                    <Text style={styles.adminButtonText}>Spillere</Text>
+                  <Pressable
+                    onPress={() => setMode("players")}
+                    style={styles.row}
+                  >
+                    <View style={styles.roleIcon}>
+                      <Ionicons
+                        name="people-outline"
+                        size={18}
+                        color={COLORS.text}
+                      />
+                    </View>
+                    <Text style={styles.rowText}>Spillere</Text>
                   </Pressable>
                 ) : null}
 
-                {/* Admin-only */}
+                {/* Admin-only: Hold */}
                 {!profileLoading && profile?.is_admin ? (
-                  <Pressable onPress={() => setMode("teams")} style={styles.adminButton}>
-                    <Ionicons name="layers-outline" size={18} color={COLORS.text} />
-                    <Text style={styles.adminButtonText}>Hold</Text>
+                  <Pressable
+                    onPress={() => setMode("teams")}
+                    style={styles.row}
+                  >
+                    <View style={styles.roleIcon}>
+                      <Ionicons
+                        name="layers-outline"
+                        size={18}
+                        color={COLORS.text}
+                      />
+                    </View>
+                    <Text style={styles.rowText}>Hold</Text>
                   </Pressable>
                 ) : null}
 
-                {/* Admin-only */}
+                {/* Admin-only: Opret kamp */}
                 {!profileLoading && profile?.is_admin ? (
-                  <Pressable onPress={() => setMode("createMatch")} style={styles.adminButton}>
-                    <Ionicons name="calendar-outline" size={18} color={COLORS.text} />
-                    <Text style={styles.adminButtonText}>Opret kamp</Text>
+                  <Pressable
+                    onPress={() => setMode("createMatch")}
+                    style={styles.row}
+                  >
+                    <View style={styles.roleIcon}>
+                      <Ionicons
+                        name="calendar-outline"
+                        size={18}
+                        color={COLORS.text}
+                      />
+                    </View>
+                    <Text style={styles.rowText}>Opret kamp</Text>
                   </Pressable>
                 ) : null}
-
               </View>
 
               <View style={{ flex: 1 }} />
@@ -1347,7 +1567,7 @@ const grantAdminToPlayer = async () => {
                 <Text style={styles.primaryButtonText}>Log ud</Text>
               </Pressable>
 
-              <Pressable onPress={close} style={styles.secondaryButton}>
+              <Pressable onPress={() => close()} style={styles.secondaryButton}>
                 <Text style={styles.secondaryButtonText}>Luk</Text>
               </Pressable>
             </>
@@ -1406,13 +1626,41 @@ const grantAdminToPlayer = async () => {
                       />
                     }
                   >
-                    {notifications.map((n) => (
+                  {notifications.map((n) => {
+                    const isInvite =
+                      n.type === "match_invite" || /klarmeld/i.test(n.body);
+                    const isSelected =
+                      !isInvite &&
+                      (n.type === "match_selected" || /udtaget/i.test(n.body));
+
+                    const created = new Date(n.created_at);
+
+                    const metaDate = created
+                      .toLocaleDateString("da-DK", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        timeZone: "Europe/Copenhagen",
+                      })
+                      .replace(/\./g, "-");
+                    const metaTime = created.toLocaleTimeString("da-DK", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                      timeZone: "Europe/Copenhagen",
+                    });
+
+                    return (
                       <Pressable
                         key={n.id}
                         onPress={() => handleOpenNotification(n)}
                         style={[
                           styles.notifCard,
                           !n.is_read && styles.notifCardUnread,
+                          // RØD border: klarmelding, læst, og ingen svar endnu
+                          isInvite &&
+                            n.is_read &&
+                            n.needs_response &&
+                            styles.notifNeedsResponse,
                         ]}
                       >
                         <View style={styles.notifTitleRow}>
@@ -1428,23 +1676,23 @@ const grantAdminToPlayer = async () => {
                           {!n.is_read && <View style={styles.notifDot} />}
                         </View>
 
-                        <Text
-                          style={styles.notifBody}
-                          numberOfLines={3}
-                        >
+                        {isInvite && (
+                          <Text style={styles.notifTagDanger}>Klarmelding</Text>
+                        )}
+                        {isSelected && (
+                          <Text style={styles.notifTagSuccess}>Udtaget</Text>
+                        )}
+
+                        <Text style={styles.notifBody} numberOfLines={3}>
                           {n.body}
                         </Text>
 
                         <Text style={styles.notifMeta}>
-                          {new Date(n.created_at).toLocaleString("da-DK", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
+                          {metaDate}, {metaTime}
                         </Text>
                       </Pressable>
-                    ))}
+                    );
+                  })}
                   </ScrollView>
                 )}
               </View>
@@ -2804,5 +3052,21 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+    notifTagDanger: {
+    marginTop: 2,
+    color: "#FF6B6B",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  notifTagSuccess: {
+    marginTop: 2,
+    color: "#4CD964",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  notifNeedsResponse: {
+    borderWidth: 1,
+    borderColor: "#FF6B6B",
   },
 });
