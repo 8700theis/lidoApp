@@ -12,6 +12,8 @@ import {
   TextInput,
   Alert,
   ScrollView,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
@@ -23,11 +25,23 @@ type ProfileRow = { role: string; is_admin: boolean; name: string | null };
 const ROLES = ["admin", "kaptajn", "spiller"] as const;
 type Role = (typeof ROLES)[number];
 
+type NotificationRow = {
+  id: string;
+  user_email: string;
+  type: string;
+  title: string;
+  body: string;
+  match_id: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
 // ✅ Fixer TS bøvl med Ionicons-name
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 export default function ProfileModal() {
   const { session } = useSession();
+  const email = session?.user?.email?.toLowerCase() ?? null;
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -35,6 +49,7 @@ export default function ProfileModal() {
   // UI state: main / create / players / edit players
   const [mode, setMode] = useState<
     | "main"
+    | "notifications"
     | "create"
     | "players"
     | "edit"
@@ -57,7 +72,7 @@ export default function ProfileModal() {
   // Holdvalg til kaptajn (max 1)
   const [selectedCaptainTeamId, setSelectedCaptainTeamId] = useState<string | null>(null);
   // Holdvalg til spiller (0..n)
-const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([]);
+  const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([]);
 
   const [creating, setCreating] = useState(false);
 
@@ -87,6 +102,12 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
   const [matchSelectedPlayers, setMatchSelectedPlayers] = useState<string[]>([]);
   const [creatingMatch, setCreatingMatch] = useState(false);
 
+  // Notifications state (for den aktuelle bruger)
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsRefreshing, setNotificationsRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   // Global badge-oversigt for ALLE brugere (ikke kun mig selv)
   const [captainEmails, setCaptainEmails] = useState<Set<string>>(new Set());
   const [playerEmails, setPlayerEmails] = useState<Set<string>>(new Set());
@@ -104,6 +125,88 @@ const [selectedPlayerTeamIds, setSelectedPlayerTeamIds] = useState<string[]>([])
     setSignupMode("availability");
     setMatchTeamPlayers([]);
     setMatchSelectedPlayers([]);
+  };
+
+  const loadNotifications = async () => {
+      if (!email) {
+        setNotifications([]);
+        setUnreadCount(0);
+        return;
+      }
+
+      try {
+        setNotificationsLoading(true);
+
+        const { data, error } = await supabase
+          .from("notifications")
+          .select(
+            "id,user_email,type,title,body,match_id,is_read,created_at"
+          )
+          .eq("user_email", email)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (error) {
+          console.log("loadNotifications error:", error.message);
+          setNotifications([]);
+          setUnreadCount(0);
+          return;
+        }
+
+        const rows = (data ?? []) as NotificationRow[];
+        setNotifications(rows);
+        setUnreadCount(rows.filter((n) => !n.is_read).length);
+      } finally {
+        setNotificationsLoading(false);
+      }
+    };
+
+  useEffect(() => {
+    loadNotifications();
+  }, [email]);
+
+  const markAllNotificationsAsRead = async () => {
+    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .in("id", unreadIds);
+
+    if (error) {
+      console.log("markAllNotificationsAsRead error:", error.message);
+      return;
+    }
+
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+  };
+
+  const handleOpenNotification = async (notif: NotificationRow) => {
+    // Markér som læst hvis den ikke allerede er det
+    if (!notif.is_read) {
+      const { error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notif.id);
+
+      if (!error) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === notif.id ? { ...n, is_read: true } : n
+          )
+        );
+        setUnreadCount((c) => Math.max(0, c - 1));
+      }
+    }
+
+    // Hvis notifikationen peger på en kamp → gå til kampdetalje
+    if (notif.match_id) {
+      // Luk panelet og navigér til kampen
+      close();
+      router.push(`../matches/${notif.match_id}`);
+    }
   };
 
   // Helper til at få badges for en vilkårlig bruger
@@ -1175,6 +1278,34 @@ const grantAdminToPlayer = async () => {
                   </Text>
                 </View>
 
+                {/* Notifikationer – alle kan se */}
+                <Pressable
+                  onPress={() => setMode("notifications")}
+                  style={styles.adminButton}
+                >
+                  <Ionicons
+                    name="notifications-outline"
+                    size={18}
+                    color={COLORS.text}
+                  />
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      flex: 1,
+                    }}
+                  >
+                    <Text style={styles.adminButtonText}>Notifikationer</Text>
+                    {unreadCount > 0 && (
+                      <View style={styles.notifBadgeSmall}>
+                        <Text style={styles.notifBadgeSmallText}>
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+
                 {/* Admin-only */}
                 {!profileLoading && profile?.is_admin ? (
                   <Pressable onPress={() => setMode("create")} style={styles.adminButton}>
@@ -1218,6 +1349,111 @@ const grantAdminToPlayer = async () => {
 
               <Pressable onPress={close} style={styles.secondaryButton}>
                 <Text style={styles.secondaryButtonText}>Luk</Text>
+              </Pressable>
+            </>
+          ) : mode === "notifications" ? (
+            <>
+              <Text style={styles.sectionTitle}>Notifikationer</Text>
+
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginTop: 4,
+                  marginBottom: 8,
+                }}
+              >
+                <Text style={styles.helpText}>
+                  Seneste beskeder og kamp-opdateringer.
+                </Text>
+
+                {unreadCount > 0 && (
+                  <Pressable
+                    onPress={markAllNotificationsAsRead}
+                    style={styles.markAllButton}
+                  >
+                    <Text style={styles.markAllButtonText}>
+                      Markér alle som læst
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                {notificationsLoading ? (
+                  <View style={styles.centered}>
+                    <ActivityIndicator size="small" />
+                  </View>
+                ) : notifications.length === 0 ? (
+                  <View style={styles.centered}>
+                    <Text style={styles.helpText}>
+                      Du har ingen notifikationer endnu.
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView
+                    style={styles.notifList}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                      <RefreshControl
+                        refreshing={notificationsRefreshing}
+                        onRefresh={async () => {
+                          setNotificationsRefreshing(true);
+                          await loadNotifications();
+                          setNotificationsRefreshing(false);
+                        }}
+                        tintColor={COLORS.accent}
+                      />
+                    }
+                  >
+                    {notifications.map((n) => (
+                      <Pressable
+                        key={n.id}
+                        onPress={() => handleOpenNotification(n)}
+                        style={[
+                          styles.notifCard,
+                          !n.is_read && styles.notifCardUnread,
+                        ]}
+                      >
+                        <View style={styles.notifTitleRow}>
+                          <Text
+                            style={[
+                              styles.notifTitle,
+                              !n.is_read && styles.notifTitleUnread,
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {n.title}
+                          </Text>
+                          {!n.is_read && <View style={styles.notifDot} />}
+                        </View>
+
+                        <Text
+                          style={styles.notifBody}
+                          numberOfLines={3}
+                        >
+                          {n.body}
+                        </Text>
+
+                        <Text style={styles.notifMeta}>
+                          {new Date(n.created_at).toLocaleString("da-DK", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+
+              <Pressable
+                onPress={() => setMode("main")}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Tilbage</Text>
               </Pressable>
             </>
           ) : mode === "create" ? (
@@ -2495,5 +2731,78 @@ const styles = StyleSheet.create({
   },
   modeChipTextActive: {
     color: COLORS.text,
+  },
+    notifList: {
+    flex: 1,
+  },
+  notifCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.03)",
+    marginBottom: 8,
+  },
+  notifCardUnread: {
+    backgroundColor: "rgba(245,197,66,0.08)",
+  },
+  notifTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  notifTitle: {
+    flex: 1,
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  notifTitleUnread: {
+    color: COLORS.accent,
+  },
+  notifDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 6,
+    backgroundColor: COLORS.accent,
+  },
+  notifBody: {
+    marginTop: 4,
+    color: COLORS.text,
+    fontSize: 13,
+  },
+  notifMeta: {
+    marginTop: 6,
+    color: COLORS.textSoft,
+    fontSize: 11,
+  },
+  notifBadgeSmall: {
+    marginLeft: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: COLORS.accent,
+  },
+  notifBadgeSmallText: {
+    color: COLORS.bg,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  markAllButton: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  markAllButtonText: {
+    color: COLORS.textSoft,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
