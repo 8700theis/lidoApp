@@ -8,15 +8,15 @@ import {
   ActivityIndicator,
   TextInput,
   ScrollView,
-  KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSession } from "../../hooks/useSession";
-import { supabase } from "../../lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import { supabase } from "../../lib/supabase";
+import { useSession } from "../../hooks/useSession";
 
 type UserTeam = {
   id: string;
@@ -67,15 +67,15 @@ export default function ChatScreen() {
 
   const [teamUnread, setTeamUnread] = useState<Record<string, number>>({});
   const [totalUnread, setTotalUnread] = useState(0);
-
   const [members, setMembers] = useState<Record<string, MemberMeta>>({});
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const scrollRef = useRef<ScrollView | null>(null);
   const channelsRef = useRef<Record<string, any>>({});
 
   const isWide = width >= 720;
 
-  // Badge på Chat-tabben
+  // badge på tab-ikonet
   useEffect(() => {
     (navigation as any).setOptions({
       tabBarBadge:
@@ -83,31 +83,31 @@ export default function ChatScreen() {
     });
   }, [navigation, totalUnread]);
 
-  // Hjælpere til badges (samme stil som i profil)
-    const renderBadgesSmall = (meta: MemberMeta | undefined) => {
+  // små rolle-badges (samme stil som i profilen, bare mindre)
+  const renderBadgesSmall = (meta: MemberMeta | undefined) => {
     if (!meta) return null;
     const { is_admin, is_captain, is_player } = meta;
 
     if (!is_admin && !is_captain && !is_player) return null;
 
     return (
-        <View style={styles.badgeRowSmall}>
+      <View style={styles.badgeRowSmall}>
         {is_admin && (
-            <Ionicons
+          <Ionicons
             name="shield-checkmark-outline"
             size={13}
             color={COLORS.accent}
-            />
+          />
         )}
         {is_captain && (
-            <Ionicons name="flag-outline" size={13} color="#4DA3FF" />
+          <Ionicons name="flag-outline" size={13} color="#4DA3FF" />
         )}
         {is_player && (
-            <Ionicons name="navigate-outline" size={13} color="#3EE08E" />
+          <Ionicons name="navigate-outline" size={13} color="#3EE08E" />
         )}
-        </View>
+      </View>
     );
-    };
+  };
 
   // ---------- LOAD TEAMS FOR USER ----------
 
@@ -280,8 +280,6 @@ export default function ChatScreen() {
         }
 
         setMessages((data ?? []) as ChatMessage[]);
-
-        // Vi har nu læst alt for det her hold → nulstil unread for holdet
         setTeamUnread((prev) => ({ ...prev, [selectedTeamId]: 0 }));
       } finally {
         setLoadingMessages(false);
@@ -291,10 +289,10 @@ export default function ChatScreen() {
     loadMessages();
   }, [selectedTeamId]);
 
-  // ---------- REALTIME: lyt efter nye beskeder pr. hold ----------
+  // ---------- REALTIME ----------
 
   useEffect(() => {
-    // ryd gamle kanaler
+    // ryd tidligere kanaler
     Object.values(channelsRef.current).forEach((ch) => {
       supabase.removeChannel(ch);
     });
@@ -319,18 +317,14 @@ export default function ChatScreen() {
             const msg = payload.new as ChatMessage;
 
             setMessages((prev) => {
-            // hvis vi allerede har beskeden, gør ingenting (så vi kan både optimistisk tilføje + realtime)
-            if (prev.some((m) => m.id === msg.id)) {
-                return prev;
-            }
+              if (prev.some((m) => m.id === msg.id)) return prev;
 
-            if (msg.team_id === selectedTeamId) {
+              if (msg.team_id === selectedTeamId) {
                 return [...prev, msg];
-            }
-            return prev;
+              }
+              return prev;
             });
 
-            // Hvis beskeden er til et andet hold end det vi kigger på → unread +1
             if (msg.team_id !== selectedTeamId) {
               setTeamUnread((prev) => ({
                 ...prev,
@@ -354,10 +348,27 @@ export default function ChatScreen() {
     };
   }, [teams, selectedTeamId]);
 
+  useEffect(() => {
+  const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+    setKeyboardOffset(e.endCoordinates.height);
+  });
+  const hideSub = Keyboard.addListener("keyboardDidHide", () => {
+    setKeyboardOffset(0);
+  });
+
+  return () => {
+    showSub.remove();
+    hideSub.remove();
+  };
+}, []);
+
   // ---------- TOTAL UNREAD ----------
 
   useEffect(() => {
-    const total = Object.values(teamUnread).reduce((sum, n) => sum + (n || 0), 0);
+    const total = Object.values(teamUnread).reduce(
+      (sum, n) => sum + (n || 0),
+      0
+    );
     setTotalUnread(total);
   }, [teamUnread]);
 
@@ -370,25 +381,24 @@ export default function ChatScreen() {
 
     setSending(true);
     try {
-        const { data, error } = await supabase
+      const { data, error } = await supabase
         .from("team_messages")
         .insert({
-            team_id: selectedTeamId,
-            sender_email: email,
-            message: text,
+          team_id: selectedTeamId,
+          sender_email: email,
+          message: text,
         })
         .select()
         .single();
 
-        if (error) {
+      if (error) {
         console.log("handleSend error:", error.message);
-        } else if (data) {
-        // Optimistisk tilføj – realtime handleren vil bare ignorere den pga. id-check
+      } else if (data) {
         setMessages((prev) => [...prev, data as ChatMessage]);
         setInput("");
-        }
+      }
     } finally {
-        setSending(false);
+      setSending(false);
     }
   };
 
@@ -419,200 +429,198 @@ export default function ChatScreen() {
     return `${dateStr}, ${timeStr}`;
   };
 
-  const getDisplayName = (email: string) => {
-    const meta = members[email.toLowerCase()];
+  const getDisplayName = (mail: string) => {
+    const meta = members[mail.toLowerCase()];
     if (meta?.name) return meta.name;
-    return email.split("@")[0];
+    return mail.split("@")[0];
   };
 
   // ---------- RENDER ----------
 
   if (!session) {
     return (
-      <View style={styles.root}>
-        <SafeAreaView style={styles.inner}>
+      <SafeAreaView style={styles.root}>
+        <View style={[styles.inner, styles.centered]}>
           <Text style={styles.infoText}>
             Du skal være logget ind for at bruge chatten.
           </Text>
-        </SafeAreaView>
-      </View>
+        </View>
+      </SafeAreaView>
     );
   }
 
     return (
-        <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
-            <KeyboardAvoidingView
-            style={styles.inner}
-            behavior="padding"                // samme på iOS og Android
-            keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
-            >
+        <SafeAreaView style={styles.root}>
+            <View style={styles.inner}>
             <View
                 style={[
                 styles.container,
                 { flexDirection: isWide ? "row" : "column" },
                 ]}
             >
-            {/* Sidebar: hold-liste */}
-            <View
-              style={[
-                styles.sidebar,
-                { width: isWide ? 140 : "100%", marginBottom: isWide ? 0 : 12 },
-              ]}
-            >
-              <Text style={styles.sectionTitle}>Hold</Text>
+          {/* Sidebar - holdliste */}
+          <View
+            style={[
+              styles.sidebar,
+              { width: isWide ? 160 : "100%", marginBottom: isWide ? 0 : 12 },
+            ]}
+          >
+            <Text style={styles.sectionTitle}>Hold</Text>
 
-              {loadingTeams ? (
-                <View style={styles.centered}>
-                  <ActivityIndicator size="small" />
-                </View>
-              ) : teams.length === 0 ? (
-                <Text style={styles.infoText}>
-                  Du er endnu ikke tilknyttet nogen hold.
-                </Text>
-              ) : (
-                teams.map((team) => {
-                  const unread = teamUnread[team.id] ?? 0;
-                  const isSelected = team.id === selectedTeamId;
-                  return (
-                    <Pressable
-                      key={team.id}
-                      onPress={() => setSelectedTeamId(team.id)}
+            {loadingTeams ? (
+              <View style={styles.centered}>
+                <ActivityIndicator size="small" />
+              </View>
+            ) : teams.length === 0 ? (
+              <Text style={styles.infoText}>
+                Du er endnu ikke tilknyttet nogen hold.
+              </Text>
+            ) : (
+              teams.map((team) => {
+                const unread = teamUnread[team.id] ?? 0;
+                const isSelected = team.id === selectedTeamId;
+                return (
+                  <Pressable
+                    key={team.id}
+                    onPress={() => setSelectedTeamId(team.id)}
+                    style={[
+                      styles.teamRow,
+                      isSelected && styles.teamRowSelected,
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.teamRow,
-                        isSelected && styles.teamRowSelected,
+                        styles.teamName,
+                        isSelected && styles.teamNameSelected,
                       ]}
+                      numberOfLines={1}
                     >
-                      <Text
-                        style={[
-                          styles.teamName,
-                          isSelected && styles.teamNameSelected,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {team.name}
-                      </Text>
-                      {unread > 0 && (
-                        <View style={styles.unreadBadgeSmall}>
-                          <Text style={styles.unreadBadgeSmallText}>
-                            {unread > 9 ? "9+" : unread}
-                          </Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  );
-                })
-              )}
-            </View>
-
-            {/* Chat-panel */}
-            <View style={styles.chatPanel}>
-              {!selectedTeam ? (
-                <View style={styles.centered}>
-                  <Text style={styles.infoText}>
-                    Vælg et hold i venstre side for at starte chat.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  {/* Header */}
-                  <View style={styles.chatHeader}>
-                    <Text style={styles.chatTitle}>{selectedTeam.name}</Text>
-                    <Text style={styles.chatSubtitle}>
-                      Intern holdchat – kun for medlemmer.
+                      {team.name}
                     </Text>
-                  </View>
-
-                  {/* Messages */}
-                  <View style={styles.messagesContainer}>
-                    {loadingMessages ? (
-                      <View style={styles.centered}>
-                        <ActivityIndicator size="small" />
-                      </View>
-                    ) : messages.length === 0 ? (
-                      <View style={styles.centered}>
-                        <Text style={styles.infoText}>
-                          Ingen beskeder endnu. Skriv den første 👋
+                    {unread > 0 && (
+                      <View style={styles.unreadBadgeSmall}>
+                        <Text style={styles.unreadBadgeSmallText}>
+                          {unread > 9 ? "9+" : unread}
                         </Text>
                       </View>
-                    ) : (
-                      <ScrollView
-                        ref={scrollRef}
-                        style={styles.messagesScroll}
-                        contentContainerStyle={{ paddingBottom: 12 }}
-                        onContentSizeChange={() =>
-                          scrollRef.current?.scrollToEnd({ animated: true })
-                        }
-                      >
-                        {messages.map((msg) => {
+                    )}
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+
+          {/* Chat panel */}
+          <View style={styles.chatPanel}>
+            {!selectedTeam ? (
+              <View style={styles.centered}>
+                <Text style={styles.infoText}>
+                  Vælg et hold i venstre side for at starte chat.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.chatHeader}>
+                  <Text style={styles.chatTitle}>{selectedTeam.name}</Text>
+                  <Text style={styles.chatSubtitle}>
+                    Intern holdchat – kun for medlemmer.
+                  </Text>
+                </View>
+
+                <View
+                style={[
+                    styles.messagesContainer,
+                    { paddingBottom: 56 + keyboardOffset },   // ⬅️ base + keyboard-højde
+                ]}
+                >
+                  {loadingMessages ? (
+                    <View style={styles.centered}>
+                      <ActivityIndicator size="small" />
+                    </View>
+                  ) : messages.length === 0 ? (
+                    <View style={styles.centered}>
+                      <Text style={styles.infoText}>
+                        Ingen beskeder endnu. Skriv den første 👋
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView
+                    ref={scrollRef}
+                    style={styles.messagesScroll}
+                    contentContainerStyle={{ paddingBottom: 8 }}
+                    onContentSizeChange={() =>
+                        scrollRef.current?.scrollToEnd({ animated: true })
+                    }
+                    >
+                      {messages.map((msg) => {
                         const mail = msg.sender_email.toLowerCase();
                         const meta = members[mail];
                         const mine = mail === email;
                         const stamp = formatStamp(msg.created_at);
 
                         return (
-                            <View
+                          <View
                             key={msg.id}
                             style={[
-                                styles.messageBubble,
-                                mine && styles.messageBubbleMine,
+                              styles.messageBubble,
+                              mine && styles.messageBubbleMine,
                             ]}
-                            >
+                          >
                             <View style={styles.messageHeader}>
-                                <View style={styles.messageHeaderLeft}>
+                              <View style={styles.messageHeaderLeft}>
                                 <Text
-                                    style={[
+                                  style={[
                                     styles.messageAuthor,
                                     mine && styles.messageAuthorMine,
-                                    ]}
-                                    numberOfLines={1}
+                                  ]}
+                                  numberOfLines={1}
                                 >
-                                    {getDisplayName(mail)}
+                                  {getDisplayName(mail)}
                                 </Text>
                                 {renderBadgesSmall(meta)}
-                                </View>
+                              </View>
                             </View>
 
                             <Text style={styles.messageText}>{msg.message}</Text>
 
                             <Text style={styles.messageTimestamp}>{stamp}</Text>
-                            </View>
+                          </View>
                         );
-                        })}
-                      </ScrollView>
-                    )}
-                  </View>
+                      })}
+                    </ScrollView>
+                  )}
+                </View>
 
-                  {/* Input */}
-                  <View style={styles.inputRow}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Skriv en besked til holdet..."
-                      placeholderTextColor={COLORS.textSoft}
-                      value={input}
-                      onChangeText={setInput}
-                      multiline
+                <View style={styles.inputRow}>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Skriv en besked til holdet..."
+                    placeholderTextColor={COLORS.textSoft}
+                    value={input}
+                    onChangeText={setInput}
+                    multiline
+                />
+                <Pressable
+                    onPress={handleSend}
+                    disabled={sending || !input.trim()}
+                    style={[
+                    styles.sendButton,
+                    (sending || !input.trim()) && styles.sendButtonDisabled,
+                    ]}
+                >
+                    <Ionicons
+                    name="send"
+                    size={18}
+                    color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
                     />
-                    <Pressable
-                      onPress={handleSend}
-                      disabled={sending || !input.trim()}
-                      style={[
-                        styles.sendButton,
-                        (sending || !input.trim()) && styles.sendButtonDisabled,
-                      ]}
-                    >
-                      <Ionicons
-                        name="send"
-                        size={18}
-                        color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
-                      />
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </View>
+                </Pressable>
+                </View>
+              </>
+            )}
           </View>
-        </KeyboardAvoidingView>
-    </SafeAreaView>
+      </View>
+    </View>
+  </SafeAreaView>
   );
 }
 
@@ -634,14 +642,15 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 10,
   },
-  chatPanel: {
+    chatPanel: {
     flex: 1,
     marginLeft: 0,
     marginTop: 12,
     borderRadius: 18,
     backgroundColor: COLORS.bgCard,
     padding: 10,
-  },
+    position: "relative",        // ⬅️ vigtigt
+    },
   sectionTitle: {
     color: COLORS.text,
     fontSize: 16,
@@ -660,53 +669,6 @@ const styles = StyleSheet.create({
   teamRowSelected: {
     backgroundColor: "rgba(245,197,66,0.15)",
   },
-  messageBubble: {
-  maxWidth: "80%",
-  paddingVertical: 8,
-  paddingHorizontal: 10,
-  borderRadius: 16,
-  marginBottom: 8,
-  backgroundColor: "rgba(255,255,255,0.06)",
-  alignSelf: "flex-start",
-},
-messageBubbleMine: {
-  backgroundColor: "rgba(245,197,66,0.22)",   // lidt mørkere/roligere gul
-  alignSelf: "flex-end",
-},
-messageHeader: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: 2,
-},
-messageHeaderLeft: {
-  flexDirection: "row",
-  alignItems: "center",
-  flex: 1,
-},
-messageAuthor: {
-  color: COLORS.text,
-  fontSize: 13,
-  fontWeight: "700",
-  marginRight: 4,
-},
-messageAuthorMine: {
-  color: COLORS.text,                         // samme farve, så den ikke “forsvinder”
-},
-badgeRowSmall: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginLeft: 4,
-},
-messageText: {
-  color: COLORS.text,
-  fontSize: 14,
-},
-messageTimestamp: {
-  color: COLORS.textSoft,
-  fontSize: 11,
-  alignSelf: "flex-end",
-  marginTop: 4,
-},
   teamName: {
     flex: 1,
     color: COLORS.text,
@@ -751,39 +713,74 @@ messageTimestamp: {
     fontSize: 13,
     marginTop: 2,
   },
-  messagesContainer: {
+    messagesContainer: {
     flex: 1,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: COLORS.borderSoft,
     padding: 8,
     backgroundColor: "rgba(0,0,0,0.2)",
-    marginBottom: 8,
-  },
+    marginBottom: 0,    // vi styrer pladsen med paddingBottom
+    },
   messagesScroll: {
     flex: 1,
   },
-  roleChip: {
-    borderRadius: 999,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+  messageBubble: {
+    maxWidth: "80%",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    marginBottom: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignSelf: "flex-start",
   },
-  roleChipText: {
-    color: COLORS.bg,
-    fontSize: 10,
+  messageBubbleMine: {
+    backgroundColor: "rgba(245,197,66,0.22)",
+    alignSelf: "flex-end",
+  },
+  messageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  messageHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  messageAuthor: {
+    color: COLORS.text,
+    fontSize: 13,
     fontWeight: "700",
-    textTransform: "uppercase",
+    marginRight: 4,
   },
-  // ekstra style til egne beskeder
-  messageTextMine: {
-    color: COLORS.bg,
+  messageAuthorMine: {
+    color: COLORS.text,
   },
-  inputRow: {
+  badgeRowSmall: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 4,
+  },
+  messageText: {
+    color: COLORS.text,
+    fontSize: 14,
+  },
+  messageTimestamp: {
+    color: COLORS.textSoft,
+    fontSize: 11,
+    alignSelf: "flex-end",
+    marginTop: 4,
+  },
+    inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    marginTop: 4,
     gap: 8,
-  },
+    position: "absolute",
+    left: 10,
+    right: 10,
+    bottom: 10,   // fast afstand til bunden af chatPanel
+    },
   input: {
     flex: 1,
     minHeight: 40,
