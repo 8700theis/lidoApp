@@ -11,6 +11,8 @@ import {
   Platform,
   useWindowDimensions,
   Keyboard,
+  KeyboardAvoidingView,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -450,8 +452,17 @@ export default function ChatScreen() {
   }
 
     return (
-        <SafeAreaView style={styles.root}>
-            <View style={styles.inner}>
+    <SafeAreaView style={styles.root}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 90}
+      >
+        <TouchableWithoutFeedback
+          onPress={Keyboard.dismiss}
+          accessible={false}
+        >
+          <View style={styles.inner}>
             <View
                 style={[
                 styles.container,
@@ -592,37 +603,39 @@ export default function ChatScreen() {
                 </View>
 
                 <View style={styles.inputRow}>
-                <TextInput
-                    style={styles.input}
-                    placeholder="Skriv en besked til holdet..."
-                    placeholderTextColor={COLORS.textSoft}
-                    value={input}
-                    onChangeText={setInput}
-                    multiline
-                />
-                <Pressable
-                    onPress={handleSend}
-                    disabled={sending || !input.trim()}
-                    style={[
-                    styles.sendButton,
-                    (sending || !input.trim()) && styles.sendButtonDisabled,
-                    ]}
-                >
-                    <Ionicons
-                    name="send"
-                    size={18}
-                    color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
-                    />
-                </Pressable>
+                  <TextInput
+                      style={styles.input}
+                      placeholder="Skriv en besked til holdet..."
+                      placeholderTextColor={COLORS.textSoft}
+                      value={input}
+                      onChangeText={setInput}
+                      multiline
+                  />
+                  <Pressable
+                      onPress={handleSend}
+                      disabled={sending || !input.trim()}
+                      style={[
+                      styles.sendButton,
+                      (sending || !input.trim()) && styles.sendButtonDisabled,
+                      ]}
+                  >
+                      <Ionicons
+                      name="send"
+                      size={18}
+                      color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
+                      />
+                  </Pressable>
                 </View>
               </>
             )}
           </View>
-      </View>
-    </View>
-  </SafeAreaView>
-  );
-}
+        </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+    );
+  }
 
 const styles = StyleSheet.create({
   root: {
@@ -777,9 +790,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: 8,
     position: "absolute",
-    left: 10,
-    right: 10,
-    bottom: 10,   // fast afstand til bunden af chatPanel
+    left: 15,
+    right: 15,
+    bottom: 15,   // fast afstand til bunden af chatPanel
     },
   input: {
     flex: 1,
