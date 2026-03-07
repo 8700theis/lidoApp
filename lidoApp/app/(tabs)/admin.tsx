@@ -74,9 +74,9 @@ export default function AdminMatchesScreen() {
   const [editSelectedRoster, setEditSelectedRoster] = useState<string[]>([]);
 
   // spillere der har meldt sig klar
-  const [readyPlayers, setReadyPlayers] = useState<
-    { email: string; name: string | null }[]
-  >([]);
+  const [readyPlayers, setReadyPlayers] = useState<{ email: string; name: string | null }[]>([]);
+
+  const [pendingPlayers, setPendingPlayers] = useState<{ email: string; name: string | null }[]>([]);
 
   // 1) tjek admin-flag
   useEffect(() => {
@@ -240,6 +240,11 @@ export default function AdminMatchesScreen() {
       .eq("match_id", match.id)
       .eq("status", "ready");
 
+    const { data: allRespRows, error: allRespErr } = await supabase
+      .from("match_responses")
+      .select("user_email")
+      .eq("match_id", match.id);
+
     let readyEmails: string[] = [];
     if (!respErr && respRows) {
       // ⭐ FEJLEN HER: sørg for lowercase, så det matcher p.email
@@ -252,6 +257,18 @@ export default function AdminMatchesScreen() {
       playersForTeam.filter((p) => readyEmails.includes(p.email));
 
     setReadyPlayers(readyList);
+
+    let respondedEmails: string[] = [];
+    if (!allRespErr && allRespRows) {
+      respondedEmails = allRespRows
+        .map((r: any) => (r.user_email || "").toLowerCase())
+        .filter(Boolean);
+    }
+
+    const pendingList: Array<{ email: string; name: string | null }> =
+      playersForTeam.filter((p) => !respondedEmails.includes(p.email));
+
+    setPendingPlayers(pendingList);
 
     // 4) UI-mode
     setEditSignupMode(match.signup_mode);
@@ -445,10 +462,14 @@ export default function AdminMatchesScreen() {
     );
   }
 
+  const visibleMatches = selected ? [selected] : matches;
+
   return (
     <View style={styles.root}>
       <View style={styles.inner}>
-        <Text style={styles.screenTitle}>Kampe (admin)</Text>
+        {!selected && (
+          <Text style={styles.screenTitle}>Kampe (admin)</Text>
+        )}
 
         {loading ? (
           <View style={{ marginTop: 16 }}>
@@ -461,7 +482,7 @@ export default function AdminMatchesScreen() {
             style={{ flex: 1 }}
             contentContainerStyle={{ gap: 10, paddingBottom: 16 }}
           >
-            {matches.map((m) => {
+            {visibleMatches.map((m) => {
               const isSelected = selected?.id === m.id;
               return (
                 <Pressable
@@ -587,8 +608,7 @@ export default function AdminMatchesScreen() {
 
             {/* Selve felterne gøres scrollbare */}
             <ScrollView
-              style={{ maxHeight: 260 }}
-              contentContainerStyle={{ paddingBottom: 8 }}
+              contentContainerStyle={{ gap: 6, paddingBottom: selected ? 6 : 16 }}
               showsVerticalScrollIndicator={false}
             >
               {/* Liga */}
@@ -722,7 +742,7 @@ export default function AdminMatchesScreen() {
               {/* 1) availability → vis klarmeldte spillere */}
               {selected.signup_mode === "availability" && (
                 <>
-                  <Text style={styles.editLabel}>Klarmeldte spillere</Text>
+                  <Text style={styles.editLabel}>Klarmeldte spillere ({readyPlayers.length})</Text>
                   {readyPlayers.length === 0 ? (
                     <Text style={styles.textSoft}>
                       Ingen spillere har meldt sig klar endnu.
@@ -766,6 +786,23 @@ export default function AdminMatchesScreen() {
                   <Text style={[styles.textSoft, { marginTop: 4 }]}>
                     Når du gemmer, bliver de valgte spillere sat som udtagne til kampen.
                   </Text>
+
+                  <Text style={[styles.editLabel, { marginTop: 12 }]}>Mangler svar ({pendingPlayers.length})</Text>
+
+                  {pendingPlayers.length === 0 ? (
+                    <Text style={styles.textSoft}>Alle spillere har svaret.</Text>
+                  ) : (
+                    <View style={{ marginTop: 4, gap: 6 }}>
+                      {pendingPlayers.map((p) => (
+                        <View key={p.email} style={styles.pendingRow}>
+                          <Text style={styles.pendingName}>
+                            {p.name ?? p.email}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
                 </>
               )}
 
@@ -862,40 +899,45 @@ export default function AdminMatchesScreen() {
                   )}
                 </>
               )}
+
+              <View style={{ marginTop: 15 }}>
+                <Pressable
+                  onPress={saveChanges}
+                  disabled={saving || deleting}
+                  style={[
+                    styles.primaryButton,
+                    (saving || deleting) && { opacity: 0.7 },
+                  ]}
+                >
+                  {saving ? (
+                    <ActivityIndicator size="small" color={COLORS.bg} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Gem ændringer</Text>
+                  )}
+                </Pressable>
+              </View>
+              
+              <View style={{ marginTop: 20 }}>
+                <Pressable
+                  onPress={deleteMatch}
+                  disabled={saving || deleting}
+                  style={[
+                    styles.dangerButton,
+                    (saving || deleting) && { opacity: 0.7 },
+                  ]}
+                >
+                  {deleting ? (
+                    <ActivityIndicator size="small" color={COLORS.text} />
+                  ) : (
+                    <Text style={styles.dangerButtonText}>Slet kamp</Text>
+                  )}
+                </Pressable>
+              </View>
+
             </ScrollView>
 
             {/* Knapperne står fast under scrolleren */}
             <View style={{ marginTop: 12, gap: 8 }}>
-              <Pressable
-                onPress={saveChanges}
-                disabled={saving || deleting}
-                style={[
-                  styles.primaryButton,
-                  (saving || deleting) && { opacity: 0.7 },
-                ]}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color={COLORS.bg} />
-                ) : (
-                  <Text style={styles.primaryButtonText}>Gem ændringer</Text>
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={deleteMatch}
-                disabled={saving || deleting}
-                style={[
-                  styles.dangerButton,
-                  (saving || deleting) && { opacity: 0.7 },
-                ]}
-              >
-                {deleting ? (
-                  <ActivityIndicator size="small" color={COLORS.text} />
-                ) : (
-                  <Text style={styles.dangerButtonText}>Slet kamp</Text>
-                )}
-              </Pressable>
-
               <Pressable
                 onPress={() => setSelected(null)}
                 disabled={saving || deleting}
@@ -1003,16 +1045,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   editPanel: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 0,
+    borderTopWidth: 0,
     borderTopColor: "rgba(255,255,255,0.08)",
   },
   editTitle: {
     color: COLORS.text,
     fontSize: 15,
     fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   editLabel: {
     color: COLORS.textSoft,
@@ -1060,7 +1102,7 @@ const styles = StyleSheet.create({
   editMeta: {
     color: COLORS.textSoft,
     fontSize: 12,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   chipRow: {
     flexDirection: "row",
@@ -1131,5 +1173,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
     marginRight: 8,
+  },
+  pendingRow: {
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  pendingName: {
+    color: COLORS.textSoft,
+    fontSize: 12,
+    fontWeight: "500",
   },
 });
