@@ -462,8 +462,6 @@ export default function AdminMatchesScreen() {
     );
   }
 
-  const visibleMatches = selected ? [selected] : matches;
-
   return (
     <View style={styles.root}>
       <View style={styles.inner}>
@@ -477,13 +475,14 @@ export default function AdminMatchesScreen() {
           </View>
         ) : matches.length === 0 ? (
           <Text style={styles.textSoft}>Ingen kampe oprettet endnu.</Text>
-        ) : (
+        ) : !selected ? (
           <ScrollView
             style={{ flex: 1 }}
-            contentContainerStyle={{ gap: 10, paddingBottom: 16 }}
+            contentContainerStyle={{ gap: 6, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}
           >
-            {visibleMatches.map((m) => {
-              const isSelected = selected?.id === m.id;
+            {matches.map((m) => {
+              const isSelected = false;
               return (
                 <Pressable
                   key={m.id}
@@ -533,7 +532,6 @@ export default function AdminMatchesScreen() {
                         </Text>
                       </View>
 
-                      {/* signup-mode badge */}
                       <View style={styles.signupPill}>
                         <Text style={styles.signupPillText}>
                           {signupModeLabel(m.signup_mode)}
@@ -552,6 +550,66 @@ export default function AdminMatchesScreen() {
               );
             })}
           </ScrollView>
+        ) : (
+          <Pressable
+            onPress={() => {}}
+            style={[styles.matchRow, styles.matchRowActive, { marginBottom: 12 }]}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.matchTeam} numberOfLines={1}>
+                  {selected.team_name}
+                </Text>
+                <Text style={styles.matchSubtitle} numberOfLines={1}>
+                  {formatStart(selected.start_at)}
+                </Text>
+                <Text style={styles.matchOpponent} numberOfLines={1}>
+                  vs {selected.opponent}
+                </Text>
+                {selected.league ? (
+                  <Text style={styles.matchLeague} numberOfLines={1}>
+                    {selected.league}
+                  </Text>
+                ) : null}
+              </View>
+
+              <View
+                style={{
+                  alignItems: "flex-end",
+                  justifyContent: "space-between",
+                }}
+              >
+                <View
+                  style={[
+                    styles.homeAwayPill,
+                    selected.is_home ? styles.homePill : styles.awayPill,
+                  ]}
+                >
+                  <Text style={styles.homeAwayText}>
+                    {selected.is_home ? "Hjemme" : "Ude"}
+                  </Text>
+                </View>
+
+                <View style={styles.signupPill}>
+                  <Text style={styles.signupPillText}>
+                    {signupModeLabel(selected.signup_mode)}
+                  </Text>
+                </View>
+
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={COLORS.textSoft}
+                  style={{ marginTop: 8, opacity: 0.6 }}
+                />
+              </View>
+            </View>
+          </Pressable>
         )}
 
         {/* Edit-panel i bunden, hvis kamp valgt */}
@@ -1045,10 +1103,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   editPanel: {
-    marginTop: 8,
+    flex: 1,
+    marginTop: 0,
     paddingTop: 0,
     borderTopWidth: 0,
-    borderTopColor: "rgba(255,255,255,0.08)",
   },
   editTitle: {
     color: COLORS.text,
