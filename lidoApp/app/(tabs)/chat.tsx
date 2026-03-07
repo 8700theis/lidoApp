@@ -10,13 +10,10 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
-  Keyboard,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
 
@@ -53,7 +50,6 @@ const COLORS = {
 
 export default function ChatScreen() {
   const { session } = useSession();
-  const navigation = useNavigation();
   const { width } = useWindowDimensions();
 
   const email = session?.user?.email?.toLowerCase() ?? null;
@@ -67,23 +63,14 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
 
-  const [teamUnread, setTeamUnread] = useState<Record<string, number>>({});
-  const [totalUnread, setTotalUnread] = useState(0);
   const [members, setMembers] = useState<Record<string, MemberMeta>>({});
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   const scrollRef = useRef<ScrollView | null>(null);
   const channelsRef = useRef<Record<string, any>>({});
 
   const isWide = width >= 720;
-
-  // badge på tab-ikonet
-  useEffect(() => {
-    (navigation as any).setOptions({
-      tabBarBadge:
-        totalUnread > 0 ? (totalUnread > 9 ? "9+" : totalUnread) : undefined,
-    });
-  }, [navigation, totalUnread]);
 
   // små rolle-badges (samme stil som i profilen, bare mindre)
   const renderBadgesSmall = (meta: MemberMeta | undefined) => {
@@ -169,6 +156,8 @@ export default function ChatScreen() {
         ).sort((a, b) => a.name.localeCompare(b.name));
 
         setTeams(uniqTeams);
+        await loadUnreadCounts(uniqTeams);
+
         if (!selectedTeamId && uniqTeams.length > 0) {
           setSelectedTeamId(uniqTeams[0].id);
         }
@@ -282,7 +271,8 @@ export default function ChatScreen() {
         }
 
         setMessages((data ?? []) as ChatMessage[]);
-        setTeamUnread((prev) => ({ ...prev, [selectedTeamId]: 0 }));
+        await markTeamAsRead(selectedTeamId);
+        await loadUnreadCounts(teams);
       } finally {
         setLoadingMessages(false);
       }
@@ -328,10 +318,13 @@ export default function ChatScreen() {
             });
 
             if (msg.team_id !== selectedTeamId) {
-              setTeamUnread((prev) => ({
+              setUnreadCounts((prev) => ({
                 ...prev,
                 [msg.team_id]: (prev[msg.team_id] ?? 0) + 1,
               }));
+            } else {
+              // hvis man allerede står i holdet, så markér det som læst igen
+              markTeamAsRead(msg.team_id);
             }
           }
         )
@@ -349,30 +342,6 @@ export default function ChatScreen() {
       channelsRef.current = {};
     };
   }, [teams, selectedTeamId]);
-
-  useEffect(() => {
-  const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
-    setKeyboardOffset(e.endCoordinates.height);
-  });
-  const hideSub = Keyboard.addListener("keyboardDidHide", () => {
-    setKeyboardOffset(0);
-  });
-
-  return () => {
-    showSub.remove();
-    hideSub.remove();
-  };
-}, []);
-
-  // ---------- TOTAL UNREAD ----------
-
-  useEffect(() => {
-    const total = Object.values(teamUnread).reduce(
-      (sum, n) => sum + (n || 0),
-      0
-    );
-    setTotalUnread(total);
-  }, [teamUnread]);
 
   // ---------- SEND MESSAGE ----------
 
@@ -417,6 +386,7 @@ export default function ChatScreen() {
       .toLocaleDateString("da-DK", {
         day: "2-digit",
         month: "2-digit",
+        year: "numeric",
         timeZone: "Europe/Copenhagen",
       })
       .replace(/\./g, "-");
@@ -428,13 +398,71 @@ export default function ChatScreen() {
         timeZone: "Europe/Copenhagen",
       })
       .replace(".", ":");
-    return `${dateStr}, ${timeStr}`;
+    return `${dateStr} - ${timeStr}`;
   };
 
   const getDisplayName = (mail: string) => {
     const meta = members[mail.toLowerCase()];
     if (meta?.name) return meta.name;
     return mail.split("@")[0];
+  };
+
+  const markTeamAsRead = async (teamId: string) => {
+    if (!email) return;
+
+    const { error } = await supabase
+      .from("team_chat_reads")
+      .upsert(
+        {
+          team_id: teamId,
+          user_email: email,
+          last_read_at: new Date().toISOString(),
+        },
+        { onConflict: "team_id,user_email" }
+      );
+
+    if (!error) {
+      setUnreadCounts((prev) => ({
+        ...prev,
+        [teamId]: 0,
+      }));
+    }
+  };
+
+  const loadUnreadCounts = async (teamList: UserTeam[]) => {
+    if (!email || teamList.length === 0) {
+      setUnreadCounts({});
+      return;
+    }
+
+    const counts: Record<string, number> = {};
+
+    for (const team of teamList) {
+      const { data: readRow } = await supabase
+        .from("team_chat_reads")
+        .select("last_read_at")
+        .eq("team_id", team.id)
+        .eq("user_email", email)
+        .maybeSingle();
+
+      const lastReadAt = readRow?.last_read_at ?? null;
+
+      let query = supabase
+        .from("team_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("team_id", team.id)
+        .neq("sender_email", email);
+
+      if (lastReadAt) {
+        query = query.gt("created_at", lastReadAt);
+      }
+
+      const { count, error } = await query;
+
+      counts[team.id] = error ? 0 : count ?? 0;
+    }
+
+    setUnreadCounts(counts);
   };
 
   // ---------- RENDER ----------
@@ -458,10 +486,6 @@ export default function ChatScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 90}
       >
-        <TouchableWithoutFeedback
-          onPress={Keyboard.dismiss}
-          accessible={false}
-        >
           <View style={styles.inner}>
             <View
                 style={[
@@ -477,7 +501,7 @@ export default function ChatScreen() {
             ]}
           >
             <Text style={styles.sectionTitle}>Hold</Text>
-
+            <View style={styles.teamChipsRow}>
             {loadingTeams ? (
               <View style={styles.centered}>
                 <ActivityIndicator size="small" />
@@ -488,7 +512,7 @@ export default function ChatScreen() {
               </Text>
             ) : (
               teams.map((team) => {
-                const unread = teamUnread[team.id] ?? 0;
+                const unread = unreadCounts[team.id] ?? 0;
                 const isSelected = team.id === selectedTeamId;
                 return (
                   <Pressable
@@ -519,6 +543,7 @@ export default function ChatScreen() {
                 );
               })
             )}
+            </View>
           </View>
 
           {/* Chat panel */}
@@ -538,12 +563,7 @@ export default function ChatScreen() {
                   </Text>
                 </View>
 
-                <View
-                style={[
-                    styles.messagesContainer,
-                    { paddingBottom: 56 + keyboardOffset },   // ⬅️ base + keyboard-højde
-                ]}
-                >
+                <View style={styles.messagesContainer}>
                   {loadingMessages ? (
                     <View style={styles.centered}>
                       <ActivityIndicator size="small" />
@@ -556,17 +576,14 @@ export default function ChatScreen() {
                     </View>
                   ) : (
                     <ScrollView
-                    ref={scrollRef}
-                    style={styles.messagesScroll}
-                    contentContainerStyle={{
-                      paddingTop: 8,
-                      paddingBottom: 8,
-                      flexGrow: 1,
-                      justifyContent: "flex-end",
-                    }}
-                    onContentSizeChange={() =>
+                      ref={scrollRef}
+                      style={styles.messagesScroll}
+                      contentContainerStyle={{ paddingBottom: 8 }}
+                      keyboardShouldPersistTaps="handled"
+                      nestedScrollEnabled
+                      onContentSizeChange={() =>
                         scrollRef.current?.scrollToEnd({ animated: true })
-                    }
+                      }
                     >
                       {messages.map((msg) => {
                         const mail = msg.sender_email.toLowerCase();
@@ -606,37 +623,43 @@ export default function ChatScreen() {
                     </ScrollView>
                   )}
                 </View>
-
-                <View style={styles.inputRow}>
-                  <TextInput
-                      style={styles.input}
-                      placeholder="Skriv en besked til holdet..."
-                      placeholderTextColor={COLORS.textSoft}
-                      value={input}
-                      onChangeText={setInput}
-                      multiline
-                  />
-                  <Pressable
-                      onPress={handleSend}
-                      disabled={sending || !input.trim()}
-                      style={[
-                      styles.sendButton,
-                      (sending || !input.trim()) && styles.sendButtonDisabled,
-                      ]}
-                  >
-                      <Ionicons
-                      name="send"
-                      size={18}
-                      color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
-                      />
-                  </Pressable>
+                
+                <View style={styles.inputBar}>
+                  <View style={styles.inputRow}>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Skriv en besked til holdet..."
+                        placeholderTextColor={COLORS.textSoft}
+                        value={input}
+                        onChangeText={setInput}
+                        multiline
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollRef.current?.scrollToEnd({ animated: true });
+                          }, 120);
+                        }}
+                    />
+                    <Pressable
+                        onPress={handleSend}
+                        disabled={sending || !input.trim()}
+                        style={[
+                        styles.sendButton,
+                        (sending || !input.trim()) && styles.sendButtonDisabled,
+                        ]}
+                    >
+                        <Ionicons
+                        name="send"
+                        size={18}
+                        color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
+                        />
+                    </Pressable>
+                  </View>
                 </View>
               </>
             )}
           </View>
         </View>
           </View>
-        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </SafeAreaView>
     );
@@ -676,19 +699,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   teamRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 999,
     backgroundColor: COLORS.bgCardSoft,
-    marginBottom: 6,
+    marginBottom: 8,
+    position: "relative",
   },
   teamRowSelected: {
     backgroundColor: "rgba(245,197,66,0.15)",
   },
   teamName: {
-    flex: 1,
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "500",
@@ -698,11 +719,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   unreadBadgeSmall: {
-    marginLeft: 6,
+    position: "absolute",
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
     paddingHorizontal: 6,
-    paddingVertical: 2,
     borderRadius: 999,
     backgroundColor: COLORS.accent,
+    alignItems: "center",
+    justifyContent: "center",
   },
   unreadBadgeSmallText: {
     color: COLORS.bg,
@@ -738,12 +764,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.borderSoft,
     padding: 8,
     backgroundColor: "rgba(0,0,0,0.2)",
-    marginBottom: 0,    // vi styrer pladsen med paddingBottom
+    marginBottom: 5,    // vi styrer pladsen med paddingBottom
     },
   messagesScroll: {
     flex: 1,
   },
   messageBubble: {
+    minWidth: "48%",
     maxWidth: "80%",
     paddingVertical: 8,
     paddingHorizontal: 10,
@@ -790,15 +817,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     marginTop: 4,
   },
-    inputRow: {
+  inputRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     gap: 8,
-    position: "absolute",
-    left: 15,
-    right: 15,
-    bottom: 15,   // fast afstand til bunden af chatPanel
-    },
+  },
   input: {
     flex: 1,
     minHeight: 40,
@@ -821,5 +844,15 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: "rgba(245,197,66,0.35)",
+  },
+  inputBar: {
+    backgroundColor: COLORS.bgCard,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  teamChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
 });

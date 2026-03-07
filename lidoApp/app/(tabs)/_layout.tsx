@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Redirect, Tabs, router } from "expo-router";
 import { useSession } from "../../hooks/useSession";
 import React from "react";
+import { AppState } from "react-native";
 import { Pressable, View, Text } from "react-native";
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
@@ -12,8 +13,11 @@ import { supabase } from "../../lib/supabase";
 import { useFocusEffect } from "@react-navigation/native";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   const { session, loading } = useSession();
+  const [chatUnreadTotal, setChatUnreadTotal] = React.useState(0);
+  const email = session?.user?.email?.toLowerCase() ?? null;
+  const colorScheme = useColorScheme();
+
 
   const COLORS = {
     bg: "#0B0F14",
@@ -23,41 +27,140 @@ export default function TabLayout() {
 
   const [unreadCount, setUnreadCount] = React.useState(0);
 
-  const refreshUnread = React.useCallback(async () => {
-    if (!session?.user?.email) {
-      setUnreadCount(0);
+
+  const refreshChatUnreadTotal = React.useCallback(async () => {
+    if (!email) {
+      setChatUnreadTotal(0);
       return;
     }
 
-    const email = session.user.email.toLowerCase();
+    try {
+      // 1) Hent hold hvor brugeren er kaptajn
+      const [{ data: captainTeams, error: capErr }, { data: playerLinks, error: plErr }] =
+        await Promise.all([
+          supabase.from("teams").select("id").eq("captain_email", email),
+          supabase.from("team_players").select("team_id").eq("email", email),
+        ]);
 
-  const { count, error } = await supabase
-    .from("notifications")
-    .select("id", { count: "exact", head: true })
-    .eq("user_email", email)
-    .eq("is_read", false)
-    .in("type", ["match_invite", "match_selected", "team_message"]);
+      if (capErr || plErr) {
+        console.log("refreshChatUnreadTotal team lookup error:", capErr || plErr);
+        setChatUnreadTotal(0);
+        return;
+      }
 
-    if (!error && typeof count === "number") {
-      setUnreadCount(count);
+      const playerTeamIds = (playerLinks ?? []).map((l: any) => l.team_id as string);
+      const allTeamIds = Array.from(
+        new Set<string>([
+          ...(captainTeams ?? []).map((t: any) => t.id as string),
+          ...playerTeamIds,
+        ])
+      );
+
+      if (allTeamIds.length === 0) {
+        setChatUnreadTotal(0);
+        return;
+      }
+
+      let total = 0;
+
+      for (const teamId of allTeamIds) {
+        const { data: readRow } = await supabase
+          .from("team_chat_reads")
+          .select("last_read_at")
+          .eq("team_id", teamId)
+          .eq("user_email", email)
+          .maybeSingle();
+
+        const lastReadAt = readRow?.last_read_at ?? null;
+
+        let query = supabase
+          .from("team_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("team_id", teamId)
+          .neq("sender_email", email); // egne beskeder tæller ikke
+
+        if (lastReadAt) {
+          query = query.gt("created_at", lastReadAt);
+        }
+
+        const { count, error } = await query;
+
+        if (!error) {
+          total += count ?? 0;
+        }
+      }
+
+      setChatUnreadTotal(total);
+    } catch (e) {
+      console.log("refreshChatUnreadTotal unexpected error:", e);
+      setChatUnreadTotal(0);
     }
-  }, [session?.user?.email]);
+  }, [email]);
 
-  // Når bruger/ email ændrer sig
+
   React.useEffect(() => {
-    refreshUnread();
-  }, [refreshUnread]);
+    refreshChatUnreadTotal();
+  }, [refreshChatUnreadTotal]);
 
-  // Hver gang tabs kommer i fokus (fx efter man lukker modaler)
   useFocusEffect(
     React.useCallback(() => {
-      refreshUnread();
-    }, [refreshUnread])
+      refreshChatUnreadTotal();
+    }, [refreshChatUnreadTotal])
   );
+
+  React.useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refreshChatUnreadTotal();
+      }
+    });
+
+    return () => sub.remove();
+  }, [refreshChatUnreadTotal]);
+
+  React.useEffect(() => {
+    if (!email) return;
+
+    const messagesChannel = supabase
+      .channel("chat-unread-messages")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "team_messages",
+        },
+        () => {
+          refreshChatUnreadTotal();
+        }
+      )
+      .subscribe();
+
+    const readsChannel = supabase
+      .channel("chat-unread-reads")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "team_chat_reads",
+        },
+        () => {
+          refreshChatUnreadTotal();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(readsChannel);
+    };
+  }, [email, refreshChatUnreadTotal]);
 
   if (!loading && !session) {
     return <Redirect href="/login" />;
   }
+  
 
   return (
     <Tabs
@@ -140,13 +243,19 @@ export default function TabLayout() {
           ),
         }}
       />
-            <Tabs.Screen
+      <Tabs.Screen
         name="chat"
         options={{
           title: "Chat",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles-outline" size={size} color={color} />
           ),
+          tabBarBadge:
+            chatUnreadTotal > 0
+              ? chatUnreadTotal > 9
+                ? "9+"
+                : chatUnreadTotal
+              : undefined,
         }}
       />
       <Tabs.Screen
