@@ -5,7 +5,6 @@ import { useSession } from "../../hooks/useSession";
 import React from "react";
 import { Pressable, View, Text, AppState } from "react-native";
 import { HapticTab } from "@/components/haptic-tab";
-import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { supabase } from "../../lib/supabase";
@@ -96,27 +95,30 @@ export default function TabLayout() {
     }
   }, [email]);
 
-  React.useEffect(() => {
-    const checkAdmin = async () => {
-      if (!session?.user?.email) return;
+React.useEffect(() => {
+  const checkAdmin = async () => {
+    if (!session?.user?.id) {
+      setIsAdmin(false);
+      return;
+    }
 
-      const email = session.user.email.toLowerCase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", session.user.id)
+      .single();
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("email", email)
-        .single();
+    if (error) {
+      console.log("profiles is_admin error:", error.message);
+      setIsAdmin(false);
+      return;
+    }
 
-      if (!error && data?.role === "admin") {
-        setIsAdmin(true);
-      } else {
-        setIsAdmin(false);
-      }
-    };
+    setIsAdmin(!!data?.is_admin);
+  };
 
-    checkAdmin();
-  }, [session?.user?.email]);
+  checkAdmin();
+}, [session?.user?.id]);
 
   React.useEffect(() => {
     refreshChatUnreadTotal();
@@ -176,6 +178,8 @@ export default function TabLayout() {
       supabase.removeChannel(readsChannel);
     };
   }, [email, refreshChatUnreadTotal]);
+
+  if (loading) return null;
 
   if (!loading && !session) {
     return <Redirect href="/login" />;
@@ -249,8 +253,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={28} name="house.fill" color={color} />
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons size={size} name="home" color={color} />
           ),
         }}
       />
