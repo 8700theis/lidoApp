@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { supabase } from "../../lib/supabase";
+import { formatTime } from "../../utils/date";
 import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
@@ -184,12 +185,6 @@ export default function MatchDetailScreen() {
       year: "numeric",
     }).format(d);
 
-  const formatTime = (d: Date) =>
-    new Intl.DateTimeFormat("da-DK", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
-
   const statusLabel = (status: string) => {
     const s = status.toLowerCase();
     if (s === "played") return "Spillet";
@@ -204,32 +199,32 @@ export default function MatchDetailScreen() {
     return COLORS.textSoft;
   };
 
-    const handleAvailability = async (status: "ready" | "not_ready") => {
-        if (!session?.user?.id || !id || savingAvailability) return;
+  const handleAvailability = async (status: "ready" | "not_ready") => {
+      if (!session?.user?.id || !id || savingAvailability) return;
 
-        setSavingAvailability(true);
+      setSavingAvailability(true);
 
-        const { error } = await supabase
-            .from("match_responses")
-            .upsert(
-            {
-                match_id: id,
-                user_id: session.user.id,
-                status,
-            },
-            { onConflict: "match_id,user_id" } // sørger for at opdatere hvis den findes
-            );
+      const { error } = await supabase
+          .from("match_responses")
+          .upsert(
+          {
+              match_id: id,
+              user_id: session.user.id,
+              status,
+          },
+          { onConflict: "match_id,user_id" } // sørger for at opdatere hvis den findes
+          );
 
-        setSavingAvailability(false);
+      setSavingAvailability(false);
 
-        if (error) {
-            console.error(error);
-            Alert.alert("Fejl", "Kunne ikke gemme din klarmelding.");
-            return;
-        }
+      if (error) {
+          console.error(error);
+          Alert.alert("Fejl", "Kunne ikke gemme din klarmelding.");
+          return;
+      }
 
-        setAvailability(status);
-    };
+      setAvailability(status);
+  };
 
   if (loading) {
     return (
@@ -278,7 +273,7 @@ export default function MatchDetailScreen() {
 
           <View style={{ marginTop: 12, gap: 4 }}>
             <Text style={styles.dateText}>{formatDate(d)}</Text>
-            <Text style={styles.timeText}>{formatTime(d)}</Text>
+            <Text style={styles.timeText}>{formatTime(match.start_at)}</Text>
             <Text style={styles.placeText}>{place}</Text>
           </View>
 

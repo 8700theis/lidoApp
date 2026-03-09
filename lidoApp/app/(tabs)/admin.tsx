@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
+import { formatDateTime } from "../../utils/date";
 import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
@@ -503,7 +504,7 @@ export default function AdminMatchesScreen() {
                         {m.team_name}
                       </Text>
                       <Text style={styles.matchSubtitle} numberOfLines={1}>
-                        {formatStart(m.start_at)}
+                        {formatDateTime(m.start_at)}
                       </Text>
                       <Text style={styles.matchOpponent} numberOfLines={1}>
                         vs {m.opponent}
@@ -566,7 +567,7 @@ export default function AdminMatchesScreen() {
                   {selected.team_name}
                 </Text>
                 <Text style={styles.matchSubtitle} numberOfLines={1}>
-                  {formatStart(selected.start_at)}
+                  {formatDateTime(selected.start_at)}
                 </Text>
                 <Text style={styles.matchOpponent} numberOfLines={1}>
                   vs {selected.opponent}
@@ -619,7 +620,7 @@ export default function AdminMatchesScreen() {
 
             {/* Lille meta-linje med hold + dato/tid */}
             <Text style={styles.editMeta}>
-              {selected.team_name} · {formatStart(selected.start_at)}
+              {selected.team_name} - {formatDateTime(selected.start_at)}
             </Text>
 
             {/* Hvis kampen er LÅST → vælg hvordan den skal frigives */}

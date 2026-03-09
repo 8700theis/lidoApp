@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSession } from "../../hooks/useSession";
 import { supabase } from "../../lib/supabase";
+import { formatTime } from "../../utils/date";
 import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
@@ -236,12 +237,6 @@ export default function MatchesScreen() {
     }).format(d);
   };
 
-  const formatTime = (d: Date) =>
-    new Intl.DateTimeFormat("da-DK", {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(d);
-
   const getTeamName = (teamId: string) =>
     teams.find((t) => t.id === teamId)?.name ?? "Ukendt hold";
 
@@ -378,10 +373,7 @@ export default function MatchesScreen() {
               </Text>
 
               {group.items.map((m) => {
-                const d = new Date(m.start_at);
-                const timeStr = formatTime(d);
                 const teamName = getTeamName(m.team_id);
-
                 const title = `${teamName} vs ${m.opponent}`;
                 const place = m.is_home ? "Hjemme" : "Ude";
 
@@ -393,7 +385,7 @@ export default function MatchesScreen() {
                     >
                     <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                       <View>
-                        <Text style={styles.matchTime}>{timeStr}</Text>
+                        <Text style={styles.matchTime}>{formatTime(m.start_at)}</Text>
                         <Text style={styles.matchTitle} numberOfLines={1}>
                           {title}
                         </Text>
@@ -437,8 +429,8 @@ export default function MatchesScreen() {
                           }
 
                           const isReady = mode === "availability" && m.my_response === "ready";
-                          const isNotReady =
-                            mode === "availability" && m.my_response === "not_ready";
+                          const isNotReady = mode === "availability" && m.my_response === "not_ready";
+                          const isPreselected = mode === "preselected";
 
                           return (
                             <View
@@ -446,12 +438,15 @@ export default function MatchesScreen() {
                                 styles.responsePill,
                                 isReady && styles.responsePillReady,
                                 isNotReady && styles.responsePillNotReady,
+                                isPreselected && styles.responsePillPreselected,
                               ]}
                             >
                               <Text
                                 style={[
                                   styles.responsePillText,
-                                  (isReady || isNotReady) && styles.responsePillTextStrong,
+                                  (isReady || isNotReady || isPreselected) &&
+                                    styles.responsePillTextStrong,
+                                  isPreselected && styles.responsePillTextPreselected,
                                 ]}
                               >
                                 {label}
@@ -639,6 +634,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,82,82,0.7)",
   },
+  responsePillPreselected: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.7)",
+  },
   responsePillText: {
     color: COLORS.textSoft,
     fontSize: 11,
@@ -647,5 +647,8 @@ const styles = StyleSheet.create({
   responsePillTextStrong: {
     color: COLORS.text,
     fontWeight: "700",
+  },
+  responsePillTextPreselected: {
+    color: COLORS.accent,
   },
 });

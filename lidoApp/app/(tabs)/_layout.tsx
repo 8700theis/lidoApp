@@ -3,8 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Redirect, Tabs, router } from "expo-router";
 import { useSession } from "../../hooks/useSession";
 import React from "react";
-import { AppState } from "react-native";
-import { Pressable, View, Text } from "react-native";
+import { Pressable, View, Text, AppState } from "react-native";
 import { HapticTab } from "@/components/haptic-tab";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
@@ -26,7 +25,7 @@ export default function TabLayout() {
   };
 
   const [unreadCount, setUnreadCount] = React.useState(0);
-
+  const [isAdmin, setIsAdmin] = React.useState(false);
 
   const refreshChatUnreadTotal = React.useCallback(async () => {
     if (!email) {
@@ -97,6 +96,27 @@ export default function TabLayout() {
     }
   }, [email]);
 
+  React.useEffect(() => {
+    const checkAdmin = async () => {
+      if (!session?.user?.email) return;
+
+      const email = session.user.email.toLowerCase();
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("email", email)
+        .single();
+
+      if (!error && data?.role === "admin") {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+    };
+
+    checkAdmin();
+  }, [session?.user?.email]);
 
   React.useEffect(() => {
     refreshChatUnreadTotal();
@@ -258,15 +278,17 @@ export default function TabLayout() {
               : undefined,
         }}
       />
-      <Tabs.Screen
-        name="admin"
-        options={{
-          title: "Admin Oversigt",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
-          ),
-        }}
-      />
+      {isAdmin && (
+        <Tabs.Screen
+          name="admin"
+          options={{
+            title: "Admin Oversigt",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="settings-outline" size={size} color={color} />
+            ),
+          }}
+        />
+      )}
     </Tabs>
   );
 }
