@@ -519,21 +519,6 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
     return "spiller";
   })();
 
-
-  const roleIcon = useMemo((): { name: IoniconName; color: string } => {
-    if (primaryRole === "admin") return { name: "shield-checkmark-outline", color: COLORS.accent };
-    if (primaryRole === "kaptajn") return { name: "flag-outline", color: "#7FB2FF" };
-    return { name: "navigate-outline", color: "#3EE08E" };
-  }, [primaryRole]);
-
-
-  const roleMeta = (role: string) => {
-    const r = (role || "").toLowerCase();
-    if (r === "admin") return { name: "shield-checkmark-outline" as const, color: COLORS.accent };
-    if (r === "kaptajn") return { name: "flag-outline" as const, color: "#7FB2FF" }; // “kaptajn” badge
-    return { name: "navigate-outline" as const, color: "#3EE08E" }; // “spiller” (dart/pil vibe)
-  };
-
   const roleRank = (role: string) => {
     const r = (role || "").toLowerCase();
     if (r === "admin") return 0;
@@ -1311,6 +1296,42 @@ const deletePlayer = async () => {
 
           setSelectedPlayer(null);
           setMode("players");
+        },
+      },
+    ]
+  );
+};
+
+const deleteTeam = async (teamId: string) => {
+  Alert.alert(
+    "Slet hold",
+    "Er du sikker på at du vil slette dette hold? Alle kampe, klarmeldinger og chatbeskeder for holdet bliver også slettet. Dette kan ikke fortrydes.",
+    [
+      {
+        text: "Annuller",
+        style: "cancel",
+      },
+      {
+        text: "Slet",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase.rpc("admin_delete_team", {
+            p_team_id: teamId,
+          });
+
+          if (error) {
+            Alert.alert("Fejl", error.message);
+            return;
+          }
+
+          Alert.alert("Hold slettet");
+
+          // Luk team view
+          setSelectedTeam(null);
+
+          // Reload holdliste
+          loadTeams();
+          router.replace("../(tabs)/profile");
         },
       },
     ]
@@ -2502,6 +2523,15 @@ const grantAdminToPlayer = async () => {
                   <Ionicons name="person-add-outline" size={18} color={COLORS.bg} />
                   <Text style={styles.primaryButtonText}>Tilføj spiller</Text>
                 </Pressable>
+
+                <View style={{ marginTop: 24 }}>
+                  <Pressable
+                    onPress={() => deleteTeam(selectedTeam.id)}
+                    style={styles.deleteTeamButton}
+                  >
+                    <Text style={styles.deleteTeamText}>Slet hold</Text>
+                  </Pressable>
+                </View>
               </View>
 
               <View style={{ flex: 1 }} />
@@ -3068,5 +3098,19 @@ const styles = StyleSheet.create({
   notifNeedsResponse: {
     borderWidth: 1,
     borderColor: "#FF6B6B",
+  },
+  deleteTeamButton: {
+    backgroundColor: "rgba(255,82,82,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,82,82,0.6)",
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+
+  deleteTeamText: {
+    color: "#FF5252",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

@@ -1,3 +1,4 @@
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useSession } from "../../hooks/useSession";
 import { useEffect, useState } from "react";
 import {
@@ -248,7 +249,7 @@ export default function MatchDetailScreen() {
   const canRespond = match.signup_mode === "availability";
 
   return (
-    <View style={styles.root}>
+    <SafeAreaView  style={styles.root} edges={["top", "left", "right"]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header med back-knap */}
         <View style={styles.headerRow}>
@@ -406,14 +407,14 @@ export default function MatchDetailScreen() {
             ) : (
               roster.map((p) => (
                 <Text key={p.email} style={styles.infoText}>
-                  {p.name ?? p.email}
+                  {p.name ?? "Spiller"}
                 </Text>
               ))
             )}
           </View>
         )}        
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -428,7 +429,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 10,
     paddingBottom: 24,
   },
   textSoft: {
