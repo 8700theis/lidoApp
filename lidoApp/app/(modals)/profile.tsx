@@ -1330,8 +1330,8 @@ const deleteTeam = async (teamId: string) => {
           setSelectedTeam(null);
 
           // Reload holdliste
-          loadTeams();
-          router.replace("../(tabs)/profile");
+          setMode("teams");
+          await loadTeams();
         },
       },
     ]
@@ -2526,7 +2526,10 @@ const grantAdminToPlayer = async () => {
 
                 <View style={{ marginTop: 24 }}>
                   <Pressable
-                    onPress={() => deleteTeam(selectedTeam.id)}
+                    onPress={() => {
+                      if (!selectedTeam) return;
+                      deleteTeam(selectedTeam.id);
+                    }}
                     style={styles.deleteTeamButton}
                   >
                     <Text style={styles.deleteTeamText}>Slet hold</Text>
