@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
   KeyboardAvoidingView,
 } from "react-native";
+import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
@@ -484,181 +485,181 @@ export default function ChatScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 90}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 90}
       >
           <View style={styles.inner}>
-            <View
+            <KeyboardDismissView 
                 style={[
                 styles.container,
                 { flexDirection: isWide ? "row" : "column" },
                 ]}
             >
-          {/* Sidebar - holdliste */}
-          <View
-            style={[
-              styles.sidebar,
-              { width: isWide ? 160 : "100%", marginBottom: isWide ? 0 : 12 },
-            ]}
-          >
-            <Text style={styles.sectionTitle}>Hold</Text>
-            <View style={styles.teamChipsRow}>
-            {loadingTeams ? (
-              <View style={styles.centered}>
-                <ActivityIndicator size="small" />
-              </View>
-            ) : teams.length === 0 ? (
-              <Text style={styles.infoText}>
-                Du er endnu ikke tilknyttet nogen hold.
-              </Text>
-            ) : (
-              teams.map((team) => {
-                const unread = unreadCounts[team.id] ?? 0;
-                const isSelected = team.id === selectedTeamId;
-                return (
-                  <Pressable
-                    key={team.id}
-                    onPress={() => setSelectedTeamId(team.id)}
-                    style={[
-                      styles.teamRow,
-                      isSelected && styles.teamRowSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.teamName,
-                        isSelected && styles.teamNameSelected,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {team.name}
-                    </Text>
-                    {unread > 0 && (
-                      <View style={styles.unreadBadgeSmall}>
-                        <Text style={styles.unreadBadgeSmallText}>
-                          {unread > 9 ? "9+" : unread}
-                        </Text>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })
-            )}
-            </View>
-          </View>
-
-          {/* Chat panel */}
-          <View style={styles.chatPanel}>
-            {!selectedTeam ? (
-              <View style={styles.centered}>
-                <Text style={styles.infoText}>
-                  Vælg et hold i venstre side for at starte chat.
-                </Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.chatHeader}>
-                  <Text style={styles.chatTitle}>{selectedTeam.name}</Text>
-                  <Text style={styles.chatSubtitle}>
-                    Intern holdchat – kun for medlemmer.
+              {/* Sidebar - holdliste */}
+              <View
+                style={[
+                  styles.sidebar,
+                  { width: isWide ? 160 : "100%", marginBottom: isWide ? 0 : 12 },
+                ]}
+              >
+                <Text style={styles.sectionTitle}>Hold</Text>
+                <View style={styles.teamChipsRow}>
+                {loadingTeams ? (
+                  <View style={styles.centered}>
+                    <ActivityIndicator size="small" />
+                  </View>
+                ) : teams.length === 0 ? (
+                  <Text style={styles.infoText}>
+                    Du er endnu ikke tilknyttet nogen hold.
                   </Text>
+                ) : (
+                  teams.map((team) => {
+                    const unread = unreadCounts[team.id] ?? 0;
+                    const isSelected = team.id === selectedTeamId;
+                    return (
+                      <Pressable
+                        key={team.id}
+                        onPress={() => setSelectedTeamId(team.id)}
+                        style={[
+                          styles.teamRow,
+                          isSelected && styles.teamRowSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.teamName,
+                            isSelected && styles.teamNameSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {team.name}
+                        </Text>
+                        {unread > 0 && (
+                          <View style={styles.unreadBadgeSmall}>
+                            <Text style={styles.unreadBadgeSmallText}>
+                              {unread > 9 ? "9+" : unread}
+                            </Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })
+                )}
                 </View>
+              </View>
 
-                <View style={styles.messagesContainer}>
-                  {loadingMessages ? (
-                    <View style={styles.centered}>
-                      <ActivityIndicator size="small" />
-                    </View>
-                  ) : messages.length === 0 ? (
-                    <View style={styles.centered}>
-                      <Text style={styles.infoText}>
-                        Ingen beskeder endnu. Skriv den første 👋
+              {/* Chat panel */}
+              <View style={styles.chatPanel}>
+                {!selectedTeam ? (
+                  <View style={styles.centered}>
+                    <Text style={styles.infoText}>
+                      Vælg et hold i venstre side for at starte chat.
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.chatHeader}>
+                      <Text style={styles.chatTitle}>{selectedTeam.name}</Text>
+                      <Text style={styles.chatSubtitle}>
+                        Intern holdchat – kun for medlemmer.
                       </Text>
                     </View>
-                  ) : (
-                    <ScrollView
-                      ref={scrollRef}
-                      style={styles.messagesScroll}
-                      contentContainerStyle={{ paddingBottom: 8 }}
-                      keyboardShouldPersistTaps="handled"
-                      nestedScrollEnabled
-                      onContentSizeChange={() =>
-                        scrollRef.current?.scrollToEnd({ animated: true })
-                      }
-                    >
-                      {messages.map((msg) => {
-                        const mail = msg.sender_email.toLowerCase();
-                        const meta = members[mail];
-                        const mine = mail === email;
-                        const stamp = formatStamp(msg.created_at);
 
-                        return (
-                          <View
-                            key={msg.id}
-                            style={[
-                              styles.messageBubble,
-                              mine && styles.messageBubbleMine,
-                            ]}
-                          >
-                            <View style={styles.messageHeader}>
-                              <View style={styles.messageHeaderLeft}>
-                                <Text
-                                  style={[
-                                    styles.messageAuthor,
-                                    mine && styles.messageAuthorMine,
-                                  ]}
-                                  numberOfLines={1}
-                                >
-                                  {getDisplayName(mail)}
-                                </Text>
-                                {renderBadgesSmall(meta)}
+                    <View style={styles.messagesContainer}>
+                      {loadingMessages ? (
+                        <View style={styles.centered}>
+                          <ActivityIndicator size="small" />
+                        </View>
+                      ) : messages.length === 0 ? (
+                        <View style={styles.centered}>
+                          <Text style={styles.infoText}>
+                            Ingen beskeder endnu. Skriv den første 👋
+                          </Text>
+                        </View>
+                      ) : (
+                        <ScrollView
+                          ref={scrollRef}
+                          style={styles.messagesScroll}
+                          contentContainerStyle={{ paddingBottom: 8 }}
+                          keyboardShouldPersistTaps="handled"
+                          nestedScrollEnabled
+                          onContentSizeChange={() =>
+                            scrollRef.current?.scrollToEnd({ animated: true })
+                          }
+                        >
+                          {messages.map((msg) => {
+                            const mail = msg.sender_email.toLowerCase();
+                            const meta = members[mail];
+                            const mine = mail === email;
+                            const stamp = formatStamp(msg.created_at);
+
+                            return (
+                              <View
+                                key={msg.id}
+                                style={[
+                                  styles.messageBubble,
+                                  mine && styles.messageBubbleMine,
+                                ]}
+                              >
+                                <View style={styles.messageHeader}>
+                                  <View style={styles.messageHeaderLeft}>
+                                    <Text
+                                      style={[
+                                        styles.messageAuthor,
+                                        mine && styles.messageAuthorMine,
+                                      ]}
+                                      numberOfLines={1}
+                                    >
+                                      {getDisplayName(mail)}
+                                    </Text>
+                                    {renderBadgesSmall(meta)}
+                                  </View>
+                                </View>
+
+                                <Text style={styles.messageText}>{msg.message}</Text>
+
+                                <Text style={styles.messageTimestamp}>{stamp}</Text>
                               </View>
-                            </View>
-
-                            <Text style={styles.messageText}>{msg.message}</Text>
-
-                            <Text style={styles.messageTimestamp}>{stamp}</Text>
-                          </View>
-                        );
-                      })}
-                    </ScrollView>
-                  )}
-                </View>
-                
-                <View style={styles.inputBar}>
-                  <View style={styles.inputRow}>
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Skriv en besked til holdet..."
-                        placeholderTextColor={COLORS.textSoft}
-                        value={input}
-                        onChangeText={setInput}
-                        multiline
-                        onFocus={() => {
-                          setTimeout(() => {
-                            scrollRef.current?.scrollToEnd({ animated: true });
-                          }, 120);
-                        }}
-                    />
-                    <Pressable
-                        onPress={handleSend}
-                        disabled={sending || !input.trim()}
-                        style={[
-                        styles.sendButton,
-                        (sending || !input.trim()) && styles.sendButtonDisabled,
-                        ]}
-                    >
-                        <Ionicons
-                        name="send"
-                        size={18}
-                        color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
+                            );
+                          })}
+                        </ScrollView>
+                      )}
+                    </View>
+                    
+                    <View style={styles.inputBar}>
+                      <View style={styles.inputRow}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Skriv en besked til holdet..."
+                            placeholderTextColor={COLORS.textSoft}
+                            value={input}
+                            onChangeText={setInput}
+                            multiline
+                            onFocus={() => {
+                              setTimeout(() => {
+                                scrollRef.current?.scrollToEnd({ animated: true });
+                              }, 120);
+                            }}
                         />
-                    </Pressable>
-                  </View>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
+                        <Pressable
+                            onPress={handleSend}
+                            disabled={sending || !input.trim()}
+                            style={[
+                            styles.sendButton,
+                            (sending || !input.trim()) && styles.sendButtonDisabled,
+                            ]}
+                        >
+                            <Ionicons
+                            name="send"
+                            size={18}
+                            color={sending || !input.trim() ? COLORS.textSoft : COLORS.bg}
+                            />
+                        </Pressable>
+                      </View>
+                    </View>
+                  </>
+                )}
+              </View>
+            </KeyboardDismissView>
           </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
