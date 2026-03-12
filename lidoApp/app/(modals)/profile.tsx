@@ -14,7 +14,9 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  KeyboardAvoidingView,
 } from "react-native";
+import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { router } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
@@ -1409,1340 +1411,1357 @@ const grantAdminToPlayer = async () => {
           },
         ]}
       >
-        <SafeAreaView style={styles.panelInner} edges={["top", "bottom"]}>
-          {/* ✅ Header bliver ALTID den samme (profil + badge + email) */}
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <View style={styles.titleRow}>
-                <Text style={styles.title} numberOfLines={1}>
-                  {profile?.name ?? "Profil"}
-                </Text>
 
-                {!profileLoading && (
-                  <View style={styles.roleBadge}>
-                    {badges.admin && (
-                      <Ionicons
-                        name="shield-checkmark-outline"
-                        size={12}
-                        color={COLORS.accent}
-                        style={{ marginRight: 4 }}
-                      />
-                    )}
-                    {badges.captain && (
-                      <Ionicons
-                        name="flag-outline"
-                        size={12}
-                        color="#7FB2FF"
-                        style={{ marginRight: 4 }}
-                      />
-                    )}
-                    {badges.player && (
-                      <Ionicons
-                        name="navigate-outline"
-                        size={12}
-                        color="#3EE08E"
-                        style={{ marginRight: 6 }}
-                      />
-                    )}
+          <SafeAreaView style={styles.panelInner} edges={["top", "bottom"]}>
+            <KeyboardDismissView style={{ flex: 1 }}>
+              {/* ✅ Header bliver ALTID den samme (profil + badge + email) */}
+              <View style={styles.headerRow}>
+                <View  style={{ flex: 1, paddingRight: 10 }}>
+                  <View style={styles.titleRow}>
+                    <Text style={styles.title} numberOfLines={1}>
+                      {profile?.name ?? "Profil"}
+                    </Text>
 
-                    {/* Teksten er kun den “højeste” rolle */}
-                    <Text style={styles.roleBadgeText}>{primaryRole}</Text>
+                    {!profileLoading && (
+                      <View style={styles.roleBadge}>
+                        {badges.admin && (
+                          <Ionicons
+                            name="shield-checkmark-outline"
+                            size={12}
+                            color={COLORS.accent}
+                            style={{ marginRight: 4 }}
+                          />
+                        )}
+                        {badges.captain && (
+                          <Ionicons
+                            name="flag-outline"
+                            size={12}
+                            color="#7FB2FF"
+                            style={{ marginRight: 4 }}
+                          />
+                        )}
+                        {badges.player && (
+                          <Ionicons
+                            name="navigate-outline"
+                            size={12}
+                            color="#3EE08E"
+                            style={{ marginRight: 6 }}
+                          />
+                        )}
+
+                        {/* Teksten er kun den “højeste” rolle */}
+                        <Text style={styles.roleBadgeText}>{primaryRole}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
 
 
-              <Text style={styles.subtitle} numberOfLines={1} ellipsizeMode="tail">
-                {session?.user?.email ?? ""}
-              </Text>
-            </View>
-
-            <Pressable onPress={() => close()} hitSlop={12} style={styles.iconButton}>
-              <Ionicons name="close" size={20} color={COLORS.textSoft} />
-            </Pressable>
-          </View>
-
-          <View style={styles.divider} />
-
-          {mode === "main" ? (
-            <>
-              <View style={{ gap: 10 }}>
-                {/* Mail-rækken (uændret) */}
-                <View style={styles.row}>
-                  <View style={styles.roleIcon}>
-                    <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
-                  </View>
-                  <Text
-                    style={styles.rowText}
-                    numberOfLines={1}
-                    ellipsizeMode="middle"
-                  >
-                    {session?.user?.email ?? "—"}
+                  <Text style={styles.subtitle} numberOfLines={1} ellipsizeMode="tail">
+                    {session?.user?.email ?? ""}
                   </Text>
                 </View>
 
-                {/* Notifikationer – samme stil som mail, men klikbar */}
-                {/* Notifikationer */}
-                <Pressable
-                  onPress={() => setMode("notifications")}
-                  style={styles.row}
-                >
-                  <View style={styles.roleIcon}>
-                    <Ionicons
-                      name="notifications-outline"
-                      size={18}
-                      color={COLORS.accent}
-                    />
+                <Pressable onPress={() => close()} hitSlop={12} style={styles.iconButton}>
+                  <Ionicons name="close" size={20} color={COLORS.textSoft} />
+                </Pressable>
+              </View>
+
+              <View style={styles.divider} />
+
+              {mode === "main" ? (
+                <>
+                  <View style={{ gap: 10 }}>
+                    {/* Mail-rækken (uændret) */}
+                    <View style={styles.row}>
+                      <View style={styles.roleIcon}>
+                        <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
+                      </View>
+                      <Text
+                        style={styles.rowText}
+                        numberOfLines={1}
+                        ellipsizeMode="middle"
+                      >
+                        {session?.user?.email ?? "—"}
+                      </Text>
+                    </View>
+
+                    {/* Notifikationer – samme stil som mail, men klikbar */}
+                    {/* Notifikationer */}
+                    <Pressable
+                      onPress={() => setMode("notifications")}
+                      style={styles.row}
+                    >
+                      <View style={styles.roleIcon}>
+                        <Ionicons
+                          name="notifications-outline"
+                          size={18}
+                          color={COLORS.accent}
+                        />
+                      </View>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          flex: 1,
+                        }}
+                      >
+                        <Text style={styles.rowText}>Notifikationer</Text>
+                        {unreadCount > 0 && (
+                          <View style={styles.notifBadgeSmall}>
+                            <Text style={styles.notifBadgeSmallText}>
+                              {unreadCount > 9 ? "9+" : unreadCount}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+
+                    {/* Admin-only: Opret spiller */}
+                    {!profileLoading && profile?.is_admin ? (
+                      <Pressable
+                        onPress={() => setMode("create")}
+                        style={styles.row}
+                      >
+                        <View style={styles.roleIcon}>
+                          <Ionicons
+                            name="person-add-outline"
+                            size={18}
+                            color={COLORS.text}
+                          />
+                        </View>
+                        <Text style={styles.rowText}>Opret spiller</Text>
+                      </Pressable>
+                    ) : null}
+
+                    {/* Admin-only: Spillere */}
+                    {!profileLoading && profile?.is_admin ? (
+                      <Pressable
+                        onPress={() => setMode("players")}
+                        style={styles.row}
+                      >
+                        <View style={styles.roleIcon}>
+                          <Ionicons
+                            name="people-outline"
+                            size={18}
+                            color={COLORS.text}
+                          />
+                        </View>
+                        <Text style={styles.rowText}>Spillere</Text>
+                      </Pressable>
+                    ) : null}
+
+                    {/* Admin-only: Hold */}
+                    {!profileLoading && profile?.is_admin ? (
+                      <Pressable
+                        onPress={() => setMode("teams")}
+                        style={styles.row}
+                      >
+                        <View style={styles.roleIcon}>
+                          <Ionicons
+                            name="layers-outline"
+                            size={18}
+                            color={COLORS.text}
+                          />
+                        </View>
+                        <Text style={styles.rowText}>Hold</Text>
+                      </Pressable>
+                    ) : null}
+
+                    {/* Admin-only: Opret kamp */}
+                    {!profileLoading && profile?.is_admin ? (
+                      <Pressable
+                        onPress={() => setMode("createMatch")}
+                        style={styles.row}
+                      >
+                        <View style={styles.roleIcon}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={18}
+                            color={COLORS.text}
+                          />
+                        </View>
+                        <Text style={styles.rowText}>Opret kamp</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
+
+                  <View style={{ flex: 1 }} />
+
+                  <Pressable onPress={logout} style={styles.primaryButton}>
+                    <Ionicons name="log-out-outline" size={18} color={COLORS.bg} />
+                    <Text style={styles.primaryButtonText}>Log ud</Text>
+                  </Pressable>
+
+                  <Pressable onPress={() => close()} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>Luk</Text>
+                  </Pressable>
+                </>
+              ) : mode === "notifications" ? (
+                <>
+                  <Text style={styles.sectionTitle}>Notifikationer</Text>
+
                   <View
                     style={{
                       flexDirection: "row",
                       alignItems: "center",
-                      flex: 1,
+                      marginTop: 4,
+                      marginBottom: 8,
                     }}
                   >
-                    <Text style={styles.rowText}>Notifikationer</Text>
-                    {unreadCount > 0 && (
-                      <View style={styles.notifBadgeSmall}>
-                        <Text style={styles.notifBadgeSmallText}>
-                          {unreadCount > 9 ? "9+" : unreadCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </Pressable>
-
-                {/* Admin-only: Opret spiller */}
-                {!profileLoading && profile?.is_admin ? (
-                  <Pressable
-                    onPress={() => setMode("create")}
-                    style={styles.row}
-                  >
-                    <View style={styles.roleIcon}>
-                      <Ionicons
-                        name="person-add-outline"
-                        size={18}
-                        color={COLORS.text}
-                      />
-                    </View>
-                    <Text style={styles.rowText}>Opret spiller</Text>
-                  </Pressable>
-                ) : null}
-
-                {/* Admin-only: Spillere */}
-                {!profileLoading && profile?.is_admin ? (
-                  <Pressable
-                    onPress={() => setMode("players")}
-                    style={styles.row}
-                  >
-                    <View style={styles.roleIcon}>
-                      <Ionicons
-                        name="people-outline"
-                        size={18}
-                        color={COLORS.text}
-                      />
-                    </View>
-                    <Text style={styles.rowText}>Spillere</Text>
-                  </Pressable>
-                ) : null}
-
-                {/* Admin-only: Hold */}
-                {!profileLoading && profile?.is_admin ? (
-                  <Pressable
-                    onPress={() => setMode("teams")}
-                    style={styles.row}
-                  >
-                    <View style={styles.roleIcon}>
-                      <Ionicons
-                        name="layers-outline"
-                        size={18}
-                        color={COLORS.text}
-                      />
-                    </View>
-                    <Text style={styles.rowText}>Hold</Text>
-                  </Pressable>
-                ) : null}
-
-                {/* Admin-only: Opret kamp */}
-                {!profileLoading && profile?.is_admin ? (
-                  <Pressable
-                    onPress={() => setMode("createMatch")}
-                    style={styles.row}
-                  >
-                    <View style={styles.roleIcon}>
-                      <Ionicons
-                        name="calendar-outline"
-                        size={18}
-                        color={COLORS.text}
-                      />
-                    </View>
-                    <Text style={styles.rowText}>Opret kamp</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <Pressable onPress={logout} style={styles.primaryButton}>
-                <Ionicons name="log-out-outline" size={18} color={COLORS.bg} />
-                <Text style={styles.primaryButtonText}>Log ud</Text>
-              </Pressable>
-
-              <Pressable onPress={() => close()} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Luk</Text>
-              </Pressable>
-            </>
-          ) : mode === "notifications" ? (
-            <>
-              <Text style={styles.sectionTitle}>Notifikationer</Text>
-
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginTop: 4,
-                  marginBottom: 8,
-                }}
-              >
-                <Text style={styles.helpText}>
-                  Seneste beskeder og kamp-opdateringer.
-                </Text>
-
-                {unreadCount > 0 && (
-                  <Pressable
-                    onPress={markAllNotificationsAsRead}
-                    style={styles.markAllButton}
-                  >
-                    <Text style={styles.markAllButtonText}>
-                      Markér alle som læst
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-
-              <View style={{ flex: 1 }}>
-                {notificationsLoading ? (
-                  <View style={styles.centered}>
-                    <ActivityIndicator size="small" />
-                  </View>
-                ) : notifications.length === 0 ? (
-                  <View style={styles.centered}>
                     <Text style={styles.helpText}>
-                      Du har ingen notifikationer endnu.
+                      Seneste beskeder og kamp-opdateringer.
                     </Text>
-                  </View>
-                ) : (
-                  <ScrollView
-                    style={styles.notifList}
-                    showsVerticalScrollIndicator={false}
-                    refreshControl={
-                      <RefreshControl
-                        refreshing={notificationsRefreshing}
-                        onRefresh={async () => {
-                          setNotificationsRefreshing(true);
-                          await loadNotifications();
-                          setNotificationsRefreshing(false);
-                        }}
-                        tintColor={COLORS.accent}
-                      />
-                    }
-                  >
-                  {notifications.map((n) => {
-                    const isInvite =
-                      n.type === "match_invite" || /klarmeld/i.test(n.body);
-                    const isSelected =
-                      !isInvite &&
-                      (n.type === "match_selected" || /udtaget/i.test(n.body));
 
-                    const created = new Date(n.created_at);
-
-                    const metaDate = created
-                      .toLocaleDateString("da-DK", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        timeZone: "Europe/Copenhagen",
-                      })
-                      .replace(/\./g, "-");
-                    const metaTime = created.toLocaleTimeString("da-DK", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                      timeZone: "Europe/Copenhagen",
-                    });
-
-                    return (
+                    {unreadCount > 0 && (
                       <Pressable
-                        key={n.id}
-                        onPress={() => handleOpenNotification(n)}
-                        style={[
-                          styles.notifCard,
-                          !n.is_read && styles.notifCardUnread,
-                          // RØD border: klarmelding, læst, og ingen svar endnu
-                          isInvite &&
-                            n.is_read &&
-                            n.needs_response &&
-                            styles.notifNeedsResponse,
-                        ]}
+                        onPress={markAllNotificationsAsRead}
+                        style={styles.markAllButton}
                       >
-                        <View style={styles.notifTitleRow}>
-                          <Text
-                            style={[
-                              styles.notifTitle,
-                              !n.is_read && styles.notifTitleUnread,
-                            ]}
-                            numberOfLines={2}
-                          >
-                            {n.title}
-                          </Text>
-                          {!n.is_read && <View style={styles.notifDot} />}
-                        </View>
-
-                        {isInvite && (
-                          <Text style={styles.notifTagDanger}>Klarmelding</Text>
-                        )}
-                        {isSelected && (
-                          <Text style={styles.notifTagSuccess}>Udtaget</Text>
-                        )}
-
-                        <Text style={styles.notifBody} numberOfLines={3}>
-                          {n.body}
-                        </Text>
-
-                        <Text style={styles.notifMeta}>
-                          {metaDate}, {metaTime}
+                        <Text style={styles.markAllButtonText}>
+                          Markér alle som læst
                         </Text>
                       </Pressable>
-                    );
-                  })}
-                  </ScrollView>
-                )}
-              </View>
-
-              <Pressable
-                onPress={() => setMode("main")}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "create" ? (
-            <>
-              {/* Header-tekst under profil-headeren */}
-              <Text style={styles.sectionTitle}>Opret spiller</Text>
-
-              {/* Alt indhold over knapperne */}
-              <View style={{ flex: 1, gap: 10 }}>
-                {/* Navn */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Navn</Text>
-                  <TextInput
-                    value={newName}
-                    onChangeText={setNewName}
-                    placeholder="Fx Mikkel Jensen"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                {/* Email */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Email</Text>
-                  <TextInput
-                    value={newEmail}
-                    onChangeText={setNewEmail}
-                    placeholder="mail@domæne.dk"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                  />
-                </View>
-
-                {/* ↓↓↓ Kun denne del er scrollable ↓↓↓ */}
-                <ScrollView
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{
-                    gap: 10,
-                    paddingBottom: 12, // lidt luft til knapperne
-                  }}
-                  showsVerticalScrollIndicator={false}
-                >
-                  {/* Rolle */}
-                  <View style={styles.inputWrap}>
-                    <Text style={styles.inputLabel}>Rolle</Text>
-
-                    <View style={styles.rolePicker}>
-                      {/* admin – toggle */}
-                      <Pressable
-                        onPress={() => setRoleAdmin((v) => !v)}
-                        style={[styles.roleChip, roleAdmin && styles.roleChipActive]}
-                      >
-                        <Text
-                          style={[
-                            styles.roleChipText,
-                            roleAdmin && styles.roleChipTextActive,
-                          ]}
-                        >
-                          admin
-                        </Text>
-                      </Pressable>
-
-                      {/* kaptajn – toggle */}
-                      <Pressable
-                        onPress={() => setRoleCaptain((v) => !v)}
-                        style={[styles.roleChip, roleCaptain && styles.roleChipActive]}
-                      >
-                        <Text
-                          style={[
-                            styles.roleChipText,
-                            roleCaptain && styles.roleChipTextActive,
-                          ]}
-                        >
-                          kaptajn
-                        </Text>
-                      </Pressable>
-
-                      {/* spiller – altid aktiv */}
-                      <Pressable style={[styles.roleChip, styles.roleChipActive]}>
-                        <Text
-                          style={[
-                            styles.roleChipText,
-                            styles.roleChipTextActive,
-                          ]}
-                        >
-                          spiller
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </View>
-
-                  {/* Kaptajn-hold */}
-                  {roleCaptain && (
-                    <View style={[styles.inputWrap, { marginTop: 10 }]}>
-                      <Text style={styles.inputLabel}>Vælg hold til kaptajn</Text>
-
-                      {teams.length === 0 ? (
-                        <Text style={styles.helpText}>Ingen hold endnu.</Text>
-                      ) : (
-                        <View style={{ gap: 8 }}>
-                          {teams.map((t) => {
-                            const isSelected = selectedCaptainTeamId === t.id;
-                            const hasCaptain = !!t.captain_email;
-
-                            return (
-                              <Pressable
-                                key={t.id}
-                                onPress={() => setSelectedCaptainTeamId(t.id)}
-                                style={[
-                                  styles.teamChip,
-                                  isSelected && styles.teamChipActive,
-                                ]}
-                              >
-                                <View
-                                  style={{
-                                    flexDirection: "row",
-                                    alignItems: "center",
-                                    justifyContent: "space-between",
-                                  }}
-                                >
-                                  <Text style={styles.teamChipText}>{t.name}</Text>
-                                  <Text style={styles.teamChipSub}>
-                                    {hasCaptain ? "Har kaptajn" : "Ingen kaptajn"}
-                                  </Text>
-                                </View>
-                              </Pressable>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Spiller-hold */}
-                  <View style={[styles.inputWrap, { marginTop: 10 }]}>
-                    <Text style={styles.inputLabel}>Hold som spiller</Text>
-
-                    {teams.length === 0 ? (
-                      <Text style={styles.helpText}>Ingen hold endnu.</Text>
-                    ) : (
-                      <View style={{ gap: 8 }}>
-                        {teams.map((t) => {
-                          const isSelected = selectedPlayerTeamIds.includes(t.id); // ✅ ens state
-
-                          return (
-                            <Pressable
-                              key={t.id}
-                              onPress={() =>
-                                setSelectedPlayerTeamIds((prev) =>
-                                  prev.includes(t.id)
-                                    ? prev.filter((id) => id !== t.id) // fjern
-                                    : [...prev, t.id]                  // tilføj
-                                )
-                              }
-                              style={[
-                                styles.teamChip,
-                                isSelected && styles.teamChipActive,
-                              ]}
-                            >
-                              <Text style={styles.teamChipText}>{t.name}</Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
                     )}
                   </View>
-                </ScrollView>
-                {/* ↑↑↑ Kun denne del scroller ↑↑↑ */}
-              </View>
 
-              {/* Knapperne står fast i bunden */}
-              <Pressable
-                onPress={createAllowedUser}
-                disabled={creating}
-                style={[styles.primaryButton, creating && { opacity: 0.7 }]}
-              >
-                <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.bg} />
-                <Text style={styles.primaryButtonText}>
-                  {creating ? "Opretter..." : "Opret"}
-                </Text>
-              </Pressable>
+                  <View style={{ flex: 1 }}>
+                    {notificationsLoading ? (
+                      <View style={styles.centered}>
+                        <ActivityIndicator size="small" />
+                      </View>
+                    ) : notifications.length === 0 ? (
+                      <View style={styles.centered}>
+                        <Text style={styles.helpText}>
+                          Du har ingen notifikationer endnu.
+                        </Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        style={styles.notifList}
+                        showsVerticalScrollIndicator={false}
+                        refreshControl={
+                          <RefreshControl
+                            refreshing={notificationsRefreshing}
+                            onRefresh={async () => {
+                              setNotificationsRefreshing(true);
+                              await loadNotifications();
+                              setNotificationsRefreshing(false);
+                            }}
+                            tintColor={COLORS.accent}
+                          />
+                        }
+                      >
+                      {notifications.map((n) => {
+                        const isInvite =
+                          n.type === "match_invite" || /klarmeld/i.test(n.body);
+                        const isSelected =
+                          !isInvite &&
+                          (n.type === "match_selected" || /udtaget/i.test(n.body));
 
-              <Pressable
-                onPress={() => {
-                  resetCreateForm();
-                  setMode("main");
-                }}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "createMatch" ? (
-            <>
-              <Text style={styles.sectionTitle}>Opret kamp</Text>
+                        const created = new Date(n.created_at);
 
-              {/* Scrollable content */}
-              <ScrollView
-                style={{ flex: 1 }}
-                contentContainerStyle={{
-                  paddingBottom: 24,
-                  gap: 10,
-                }}
-                showsVerticalScrollIndicator={false}
-              >
-                {/* Holdvalg */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Hold</Text>
+                        const metaDate = created
+                          .toLocaleDateString("da-DK", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            timeZone: "Europe/Copenhagen",
+                          })
+                          .replace(/\./g, "-");
+                        const metaTime = created.toLocaleTimeString("da-DK", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: false,
+                          timeZone: "Europe/Copenhagen",
+                        });
 
-                  {teams.length === 0 ? (
-                    <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
-                  ) : (
-                    <View style={styles.rolePicker}>
-                      {teams.map((t) => {
-                        const isSelected = matchTeamId === t.id;
                         return (
                           <Pressable
-                            key={t.id}
-                            onPress={() => setMatchTeamId(t.id)}
+                            key={n.id}
+                            onPress={() => handleOpenNotification(n)}
                             style={[
-                              styles.roleChip,
-                              isSelected && styles.roleChipActive,
+                              styles.notifCard,
+                              !n.is_read && styles.notifCardUnread,
+                              // RØD border: klarmelding, læst, og ingen svar endnu
+                              isInvite &&
+                                n.is_read &&
+                                n.needs_response &&
+                                styles.notifNeedsResponse,
                             ]}
                           >
-                            <Text
-                              style={[
-                                styles.roleChipText,
-                                isSelected && styles.roleChipTextActive,
-                              ]}
-                            >
-                              {t.name}
+                            <View style={styles.notifTitleRow}>
+                              <Text
+                                style={[
+                                  styles.notifTitle,
+                                  !n.is_read && styles.notifTitleUnread,
+                                ]}
+                                numberOfLines={2}
+                              >
+                                {n.title}
+                              </Text>
+                              {!n.is_read && <View style={styles.notifDot} />}
+                            </View>
+
+                            {isInvite && (
+                              <Text style={styles.notifTagDanger}>Klarmelding</Text>
+                            )}
+                            {isSelected && (
+                              <Text style={styles.notifTagSuccess}>Udtaget</Text>
+                            )}
+
+                            <Text style={styles.notifBody} numberOfLines={3}>
+                              {n.body}
+                            </Text>
+
+                            <Text style={styles.notifMeta}>
+                              {metaDate}, {metaTime}
                             </Text>
                           </Pressable>
                         );
                       })}
-                    </View>
-                  )}
-                </View>
-
-                {/* Opret kamp som */}
-                <View style={{ marginTop: 16 }}>
-                  <Text
-                    style={{
-                      color: COLORS.textSoft,
-                      fontSize: 13,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Opret kamp som:
-                  </Text>
-
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    {/* Klarmelding */}
-                    <Pressable
-                      onPress={() => setSignupMode("availability")}
-                      style={[
-                        styles.modeChip,
-                        signupMode === "availability" && styles.modeChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.modeChipText,
-                          signupMode === "availability" && styles.modeChipTextActive,
-                        ]}
-                      >
-                        Klarmelding
-                      </Text>
-                    </Pressable>
-
-                    {/* Sæt hold */}
-                    <Pressable
-                      onPress={() => setSignupMode("preselected")}
-                      style={[
-                        styles.modeChip,
-                        signupMode === "preselected" && styles.modeChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.modeChipText,
-                          signupMode === "preselected" && styles.modeChipTextActive,
-                        ]}
-                      >
-                        Sæt hold
-                      </Text>
-                    </Pressable>
-
-                    {/* Låst */}
-                    <Pressable
-                      onPress={() => setSignupMode("locked")}
-                      style={[
-                        styles.modeChip,
-                        signupMode === "locked" && styles.modeChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.modeChipText,
-                          signupMode === "locked" && styles.modeChipTextActive,
-                        ]}
-                      >
-                        Låst
-                      </Text>
-                    </Pressable>
-                  </View>
-
-                  <Text
-                    style={{
-                      color: COLORS.textSoft,
-                      fontSize: 11,
-                      marginTop: 6,
-                    }}
-                  >
-                    • Klarmelding: spillere kan melde klar/ikke klar.{"\n"}
-                    • Sæt hold: ingen klarmelding, kampen er sat på forhånd.{"\n"}
-                    • Låst: kamp oprettet uden spillerstatus – kan frigives senere.
-                  </Text>
-                </View>
-
-                                {signupMode === "preselected" && (
-                  <View style={[styles.inputWrap, { marginTop: 10 }]}>
-                    <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
-
-                    {!matchTeamId ? (
-                      <Text style={styles.helpText}>Vælg først et hold.</Text>
-                    ) : matchTeamPlayersLoading ? (
-                      <Text style={styles.helpText}>Henter spillere...</Text>
-                    ) : matchTeamPlayers.length === 0 ? (
-                      <Text style={styles.helpText}>
-                        Der er endnu ingen spillere tilknyttet dette hold.
-                      </Text>
-                    ) : (
-                      <View style={{ gap: 8 }}>
-                        {matchTeamPlayers.map((p) => {
-                          const email = p.email.toLowerCase();
-                          const isSelected = matchSelectedPlayers.includes(email);
-
-                          return (
-                            <Pressable
-                              key={email}
-                              onPress={() =>
-                                setMatchSelectedPlayers((prev) =>
-                                  prev.includes(email)
-                                    ? prev.filter((e) => e !== email)
-                                    : [...prev, email]
-                                )
-                              }
-                              style={[
-                                styles.teamChip,
-                                isSelected && styles.teamChipActive,
-                              ]}
-                            >
-                              <Text style={styles.teamChipText}>
-                                {p.name ?? p.email}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
+                      </ScrollView>
                     )}
                   </View>
-                )}
 
-                {/* Dato + tid */}
-                <View style={{ flexDirection: "row", gap: 10 }}>
-                  <View style={[styles.inputWrap, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>Dato</Text>
-                    <TextInput
-                      value={matchDate}
-                      onChangeText={setMatchDate}
-                      placeholder="2025-03-10"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      style={styles.input}
-                      autoCapitalize="none"
-                    />
-                  </View>
+                  <Pressable
+                    onPress={() => setMode("main")}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              ) : mode === "create" ? (
+                <>
+                  {/* Header-tekst under profil-headeren */}
+                  <Text style={styles.sectionTitle}>Opret spiller</Text>
 
-                  <View style={[styles.inputWrap, { flex: 1 }]}>
-                    <Text style={styles.inputLabel}>Tidspunkt</Text>
-                    <TextInput
-                      value={matchTime}
-                      onChangeText={setMatchTime}
-                      placeholder="19:30"
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      style={styles.input}
-                      autoCapitalize="none"
-                    />
-                  </View>
-                </View>
+                  {/* Alt indhold over knapperne */}
+                  <View style={{ flex: 1, gap: 10 }}>
+                    {/* Navn */}
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Navn</Text>
+                      <TextInput
+                        value={newName}
+                        onChangeText={setNewName}
+                        placeholder="Fx Mikkel Jensen"
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        style={styles.input}
+                        autoCapitalize="words"
+                      />
+                    </View>
 
-                {/* Hjemme / ude */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Bane</Text>
-                  <View style={styles.rolePicker}>
-                    <Pressable
-                      onPress={() => setMatchIsHome(true)}
-                      style={[
-                        styles.roleChip,
-                        matchIsHome === true && styles.roleChipActive,
-                      ]}
+                    {/* Email */}
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Email</Text>
+                      <TextInput
+                        value={newEmail}
+                        onChangeText={setNewEmail}
+                        placeholder="mail@domæne.dk"
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        style={styles.input}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                      />
+                    </View>
+
+                    {/* ↓↓↓ Kun denne del er scrollable ↓↓↓ */}
+                    <ScrollView
+                      style={{ flex: 1 }}
+                      contentContainerStyle={{
+                        gap: 10,
+                        paddingBottom: 12, // lidt luft til knapperne
+                      }}
+                      showsVerticalScrollIndicator={false}
                     >
-                      <Text
-                        style={[
-                          styles.roleChipText,
-                          matchIsHome === true && styles.roleChipTextActive,
-                        ]}
-                      >
-                        Hjemme
-                      </Text>
-                    </Pressable>
+                      {/* Rolle */}
+                      <View style={styles.inputWrap}>
+                        <Text style={styles.inputLabel}>Rolle</Text>
 
-                    <Pressable
-                      onPress={() => setMatchIsHome(false)}
-                      style={[
-                        styles.roleChip,
-                        matchIsHome === false && styles.roleChipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.roleChipText,
-                          matchIsHome === false && styles.roleChipTextActive,
-                        ]}
-                      >
-                        Ude
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Liga */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Liga (valgfri)</Text>
-                  <TextInput
-                    value={matchLeague}
-                    onChangeText={setMatchLeague}
-                    placeholder="Fx U15 A, 2. division"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="none"
-                  />
-                </View>
-
-                {/* Modstander */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Modstander</Text>
-                  <TextInput
-                    value={matchOpponent}
-                    onChangeText={setMatchOpponent}
-                    placeholder="Fx Køge, Brøndby"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                {/* Type */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Type (valgfri)</Text>
-                  <TextInput
-                    value={matchType}
-                    onChangeText={setMatchType}
-                    placeholder="Fx Træningskamp, Turnering"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="sentences"
-                  />
-                </View>
-
-                {/* Noter */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Noter (valgfri)</Text>
-                  <TextInput
-                    value={matchNotes}
-                    onChangeText={setMatchNotes}
-                    placeholder="Ekstra info til spillerne"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={[styles.input, { minHeight: 60 }]}
-                    multiline
-                  />
-                </View>
-
-              </ScrollView>
-
-              <View style={{ paddingTop: 12 }}>            
-                <Pressable
-                  onPress={createMatch}
-                  disabled={creatingMatch}
-                  style={[styles.primaryButton, creatingMatch && { opacity: 0.7 }]}
-                >
-                  {creatingMatch ? (
-                    <Text style={styles.primaryButtonText}>Opretter...</Text>
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Opret kamp</Text>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  onPress={() => {
-                    resetCreateMatchForm();
-                    setMode("main");
-                  }}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Tilbage</Text>
-                </Pressable>
-              </View>
-            </>
-          ) : mode === "players" ? (
-            <>
-              {/* Players view */}
-              <View style={{ gap: 10 }}>
-                <Text style={styles.sectionTitlePlayers}>Spillere</Text>
-
-                {playersLoading ? (
-                  <Text style={styles.helpText}>Henter...</Text>
-                ) : players.length === 0 ? (
-                  <Text style={styles.helpText}>Ingen whitelisted endnu.</Text>
-                ) : (
-                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
-                    {players.map((p) => {
-                      const label = (p.name?.trim() || p.email).trim();
-                      const b = getBadgesForUser(p.email, p.role);
-
-                      return (
-                        <Pressable
-                          key={p.email}
-                          onPress={() => openEditPlayer(p)}
-                          style={styles.playerRow}
-                        >
-                          <View style={styles.playerLeft}>
-                            <Text style={styles.playerName} numberOfLines={1}>
-                              {label}
+                        <View style={styles.rolePicker}>
+                          {/* admin – toggle */}
+                          <Pressable
+                            onPress={() => setRoleAdmin((v) => !v)}
+                            style={[styles.roleChip, roleAdmin && styles.roleChipActive]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleChipText,
+                                roleAdmin && styles.roleChipTextActive,
+                              ]}
+                            >
+                              admin
                             </Text>
-                            {renderBadgesSmall(b)}
+                          </Pressable>
+
+                          {/* kaptajn – toggle */}
+                          <Pressable
+                            onPress={() => setRoleCaptain((v) => !v)}
+                            style={[styles.roleChip, roleCaptain && styles.roleChipActive]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleChipText,
+                                roleCaptain && styles.roleChipTextActive,
+                              ]}
+                            >
+                              kaptajn
+                            </Text>
+                          </Pressable>
+
+                          {/* spiller – altid aktiv */}
+                          <Pressable style={[styles.roleChip, styles.roleChipActive]}>
+                            <Text
+                              style={[
+                                styles.roleChipText,
+                                styles.roleChipTextActive,
+                              ]}
+                            >
+                              spiller
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      {/* Kaptajn-hold */}
+                      {roleCaptain && (
+                        <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                          <Text style={styles.inputLabel}>Vælg hold til kaptajn</Text>
+
+                          {teams.length === 0 ? (
+                            <Text style={styles.helpText}>Ingen hold endnu.</Text>
+                          ) : (
+                            <View style={{ gap: 8 }}>
+                              {teams.map((t) => {
+                                const isSelected = selectedCaptainTeamId === t.id;
+                                const hasCaptain = !!t.captain_email;
+
+                                return (
+                                  <Pressable
+                                    key={t.id}
+                                    onPress={() => setSelectedCaptainTeamId(t.id)}
+                                    style={[
+                                      styles.teamChip,
+                                      isSelected && styles.teamChipActive,
+                                    ]}
+                                  >
+                                    <View
+                                      style={{
+                                        flexDirection: "row",
+                                        alignItems: "center",
+                                        justifyContent: "space-between",
+                                      }}
+                                    >
+                                      <Text style={styles.teamChipText}>{t.name}</Text>
+                                      <Text style={styles.teamChipSub}>
+                                        {hasCaptain ? "Har kaptajn" : "Ingen kaptajn"}
+                                      </Text>
+                                    </View>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+                      )}
+
+                      {/* Spiller-hold */}
+                      <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                        <Text style={styles.inputLabel}>Hold som spiller</Text>
+
+                        {teams.length === 0 ? (
+                          <Text style={styles.helpText}>Ingen hold endnu.</Text>
+                        ) : (
+                          <View style={{ gap: 8 }}>
+                            {teams.map((t) => {
+                              const isSelected = selectedPlayerTeamIds.includes(t.id); // ✅ ens state
+
+                              return (
+                                <Pressable
+                                  key={t.id}
+                                  onPress={() =>
+                                    setSelectedPlayerTeamIds((prev) =>
+                                      prev.includes(t.id)
+                                        ? prev.filter((id) => id !== t.id) // fjern
+                                        : [...prev, t.id]                  // tilføj
+                                    )
+                                  }
+                                  style={[
+                                    styles.teamChip,
+                                    isSelected && styles.teamChipActive,
+                                  ]}
+                                >
+                                  <Text style={styles.teamChipText}>{t.name}</Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </View>
+                    </ScrollView>
+                    {/* ↑↑↑ Kun denne del scroller ↑↑↑ */}
+                  </View>
+
+                  {/* Knapperne står fast i bunden */}
+                  <Pressable
+                    onPress={createAllowedUser}
+                    disabled={creating}
+                    style={[styles.primaryButton, creating && { opacity: 0.7 }]}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.bg} />
+                    <Text style={styles.primaryButtonText}>
+                      {creating ? "Opretter..." : "Opret"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => {
+                      resetCreateForm();
+                      setMode("main");
+                    }}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              ) : mode === "createMatch" ? (
+                <>
+                  <Text style={styles.sectionTitle}>Opret kamp</Text>
+
+                  <View style={{ flex: 1 }}>
+                    <KeyboardAvoidingView
+                      style={{ flex: 1 }}
+                      behavior={Platform.OS === "ios" ? "padding" : "height"}
+                      keyboardVerticalOffset={0}
+                    >
+                      {/* Scrollable content */}
+                      <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{
+                          paddingBottom: 24,
+                          gap: 10,
+                        }}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                      >
+                        {/* Holdvalg */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Hold</Text>
+
+                          {teams.length === 0 ? (
+                            <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
+                          ) : (
+                            <View style={styles.rolePicker}>
+                              {teams.map((t) => {
+                                const isSelected = matchTeamId === t.id;
+                                return (
+                                  <Pressable
+                                    key={t.id}
+                                    onPress={() => setMatchTeamId(t.id)}
+                                    style={[
+                                      styles.roleChip,
+                                      isSelected && styles.roleChipActive,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.roleChipText,
+                                        isSelected && styles.roleChipTextActive,
+                                      ]}
+                                    >
+                                      {t.name}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Opret kamp som */}
+                        <View style={{ marginTop: 16 }}>
+                          <Text
+                            style={{
+                              color: COLORS.textSoft,
+                              fontSize: 13,
+                              marginBottom: 8,
+                            }}
+                          >
+                            Opret kamp som:
+                          </Text>
+
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            {/* Klarmelding */}
+                            <Pressable
+                              onPress={() => setSignupMode("availability")}
+                              style={[
+                                styles.modeChip,
+                                signupMode === "availability" && styles.modeChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.modeChipText,
+                                  signupMode === "availability" && styles.modeChipTextActive,
+                                ]}
+                              >
+                                Klarmelding
+                              </Text>
+                            </Pressable>
+
+                            {/* Sæt hold */}
+                            <Pressable
+                              onPress={() => setSignupMode("preselected")}
+                              style={[
+                                styles.modeChip,
+                                signupMode === "preselected" && styles.modeChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.modeChipText,
+                                  signupMode === "preselected" && styles.modeChipTextActive,
+                                ]}
+                              >
+                                Sæt hold
+                              </Text>
+                            </Pressable>
+
+                            {/* Låst */}
+                            <Pressable
+                              onPress={() => setSignupMode("locked")}
+                              style={[
+                                styles.modeChip,
+                                signupMode === "locked" && styles.modeChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.modeChipText,
+                                  signupMode === "locked" && styles.modeChipTextActive,
+                                ]}
+                              >
+                                Låst
+                              </Text>
+                            </Pressable>
                           </View>
 
-                          <Ionicons
-                            name="chevron-forward"
-                            size={16}
-                            color={COLORS.textSoft}
-                            style={{ opacity: 0.5 }}
-                          />
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <Pressable
-                onPress={() => setMode("main")}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "teams" ? (
-            <>
-              {/* Teams view */}
-              <View style={{ gap: 10 }}>
-                <Text style={styles.sectionTitle}>Opret hold</Text>
-
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Holdnavn</Text>
-                  <TextInput
-                    value={newTeamName}
-                    onChangeText={setNewTeamName}
-                    placeholder="Fx Lido 1"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                <Pressable
-                  onPress={async () => {
-                    const name = newTeamName.trim();
-                    if (!name) {
-                      Alert.alert("Mangler", "Skriv et navn til holdet.");
-                      return;
-                    }
-
-                    setCreatingTeam(true);
-                    const { error } = await supabase
-                      .from("teams")
-                      .insert({ name });
-                    setCreatingTeam(false);
-
-                    if (error) {
-                      Alert.alert("Fejl", error.message);
-                      return;
-                    }
-
-                    setNewTeamName("");
-                    await loadTeams();
-                  }}
-                  disabled={creatingTeam}
-                  style={[styles.primaryButton, { marginTop: 4 }, creatingTeam && { opacity: 0.7 }]}
-                >
-                  <Ionicons name="add-circle-outline" size={18} color={COLORS.bg} />
-                  <Text style={styles.primaryButtonText}>
-                    {creatingTeam ? "Opretter..." : "Opret hold"}
-                  </Text>
-                </Pressable>
-
-                {teamsLoading ? (
-                  <Text style={styles.helpText}>Henter hold...</Text>
-                ) : teams.length === 0 ? (
-                  <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
-                ) : (
-                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
-                    {teams.map((t) => (
-                      <Pressable
-                        key={t.id}
-                        onPress={() => openTeamDetail(t)}
-                        style={styles.playerRow}
-                      >
-                        <View style={styles.playerLeft}>
-                          <Text style={styles.playerName} numberOfLines={1}>
-                            {t.name}
+                          <Text
+                            style={{
+                              color: COLORS.textSoft,
+                              fontSize: 11,
+                              marginTop: 6,
+                            }}
+                          >
+                            • Klarmelding: spillere kan melde klar/ikke klar.{"\n"}
+                            • Sæt hold: ingen klarmelding, kampen er sat på forhånd.{"\n"}
+                            • Låst: kamp oprettet uden spillerstatus – kan frigives senere.
                           </Text>
                         </View>
 
-                        <Ionicons
-                          name="chevron-forward"
-                          size={16}
-                          color={COLORS.textSoft}
-                          style={{ opacity: 0.5 }}
-                        />
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                )}
-              </View>
+                                        {signupMode === "preselected" && (
+                          <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                            <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
 
-              <View style={{ flex: 1 }} />
+                            {!matchTeamId ? (
+                              <Text style={styles.helpText}>Vælg først et hold.</Text>
+                            ) : matchTeamPlayersLoading ? (
+                              <Text style={styles.helpText}>Henter spillere...</Text>
+                            ) : matchTeamPlayers.length === 0 ? (
+                              <Text style={styles.helpText}>
+                                Der er endnu ingen spillere tilknyttet dette hold.
+                              </Text>
+                            ) : (
+                              <View style={{ gap: 8 }}>
+                                {matchTeamPlayers.map((p) => {
+                                  const email = p.email.toLowerCase();
+                                  const isSelected = matchSelectedPlayers.includes(email);
 
-              <Pressable
-                onPress={() => setMode("main")}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "teamDetail" ? (
-            <>
-              {/* Team detail view */}
-              <View style={{ gap: 10 }}>
-                <Text style={styles.sectionTitlePlayers}>
-                  {selectedTeam ? selectedTeam.name : "Hold"}
-                </Text>
-
-                {/* Kaptajn sektion */}
-                <Text style={styles.sectionTitle}>Holdkaptajn</Text>
-
-                <Pressable
-                  onPress={() => setMode("selectCaptain")}
-                  style={styles.inputWrap}
-                >
-                  {teamLoading ? (
-                    <Text style={styles.helpText}>Henter...</Text>
-                  ) : teamCaptain ? (
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                      <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Text style={styles.playerName} numberOfLines={1}>
-                          {teamCaptain.name ?? teamCaptain.email}
-                        </Text>
-                        {renderBadgesSmall(getBadgesForUser(teamCaptain.email, teamCaptain.role))}
-                      </View>
-
-                      <Ionicons name="chevron-forward" size={16} color={COLORS.textSoft} style={{ opacity: 0.5 }} />
-                    </View>
-                  ) : (
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                      <Text style={styles.helpText}>Ingen kaptajn valgt</Text>
-                      <Ionicons name="add-circle-outline" size={20} color={COLORS.accent} />
-                    </View>
-                  )}
-                </Pressable>
-
-                {/* Slet kaptajn knap hvis der er en */}
-                {teamCaptain && (
-                  <Pressable
-                    onPress={() =>
-                      Alert.alert(
-                        "Fjern kaptajn?",
-                        "Er du sikker på at du vil fjerne denne kaptajn?",
-                        [
-                          { text: "Annuller", style: "cancel" },
-                          {
-                            text: "Fjern",
-                            style: "destructive",
-                            onPress: () => clearCaptainForTeam(),
-                          },
-                        ]
-                      )
-                    }
-                    style={styles.dangerButton}
-                  >
-                    <Ionicons name="trash-outline" size={16} color={COLORS.text} />
-                    <Text style={styles.dangerButtonText}>Fjern kaptajn</Text>
-                  </Pressable>
-                )}
-
-                {/* Spillere på holdet */}
-                <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Spillere</Text>
-
-                {teamLoading ? (
-                  <Text style={styles.helpText}>Henter spillere...</Text>
-                ) : teamPlayers.length === 0 ? (
-                  <Text style={styles.helpText}>Ingen spillere på holdet endnu.</Text>
-                ) : (
-                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
-                    {teamPlayers.map((p) => {
-                      const label = (p.name?.trim() || p.email).trim();
-                      const { isAdmin, isCaptainHere, isPlayerHere } =
-                        getBadgesForUserOnTeam(p, selectedTeam?.id);
-
-                      return (
-                        <View key={p.email} style={styles.playerRow}>
-                          <View style={styles.playerLeft}>
-                            <Text style={styles.playerName} numberOfLines={1}>
-                              {label}
-                            </Text>
-
-                            {/* admin badge */}
-                            {isAdmin && (
-                              <Ionicons
-                                name="shield-checkmark-outline"
-                                size={16}
-                                color={COLORS.accent}
-                                style={{ marginLeft: 8 }}
-                              />
-                            )}
-
-                            {/* kaptajn-badge (kun hvis kaptajn for DETTE hold) */}
-                            {isCaptainHere && (
-                              <Ionicons
-                                name="flag-outline"
-                                size={16}
-                                color="#7FB2FF"
-                                style={{ marginLeft: 6 }}
-                              />
-                            )}
-
-                            {/* spiller-badge (de er jo spillere på det her hold) */}
-                            {isPlayerHere && (
-                              <Ionicons
-                                name="navigate-outline"
-                                size={16}
-                                color="#3EE08E"
-                                style={{ marginLeft: 6 }}
-                              />
+                                  return (
+                                    <Pressable
+                                      key={email}
+                                      onPress={() =>
+                                        setMatchSelectedPlayers((prev) =>
+                                          prev.includes(email)
+                                            ? prev.filter((e) => e !== email)
+                                            : [...prev, email]
+                                        )
+                                      }
+                                      style={[
+                                        styles.teamChip,
+                                        isSelected && styles.teamChipActive,
+                                      ]}
+                                    >
+                                      <Text style={styles.teamChipText}>
+                                        {p.name ?? p.email}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
                             )}
                           </View>
+                        )}
 
-                          {/* den røde remove-knap du allerede har */}
+                        {/* Dato + tid */}
+                        <View style={{ flexDirection: "row", gap: 10 }}>
+                          <View style={[styles.inputWrap, { flex: 1 }]}>
+                            <Text style={styles.inputLabel}>Dato</Text>
+                            <TextInput
+                              value={matchDate}
+                              onChangeText={setMatchDate}
+                              placeholder="2025-03-10"
+                              placeholderTextColor="rgba(255,255,255,0.35)"
+                              style={styles.input}
+                              autoCapitalize="none"
+                            />
+                          </View>
+
+                          <View style={[styles.inputWrap, { flex: 1 }]}>
+                            <Text style={styles.inputLabel}>Tidspunkt</Text>
+                            <TextInput
+                              value={matchTime}
+                              onChangeText={setMatchTime}
+                              placeholder="19:30"
+                              placeholderTextColor="rgba(255,255,255,0.35)"
+                              style={styles.input}
+                              autoCapitalize="none"
+                            />
+                          </View>
+                        </View>
+
+                        {/* Hjemme / ude */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Bane</Text>
+                          <View style={styles.rolePicker}>
+                            <Pressable
+                              onPress={() => setMatchIsHome(true)}
+                              style={[
+                                styles.roleChip,
+                                matchIsHome === true && styles.roleChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.roleChipText,
+                                  matchIsHome === true && styles.roleChipTextActive,
+                                ]}
+                              >
+                                Hjemme
+                              </Text>
+                            </Pressable>
+
+                            <Pressable
+                              onPress={() => setMatchIsHome(false)}
+                              style={[
+                                styles.roleChip,
+                                matchIsHome === false && styles.roleChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.roleChipText,
+                                  matchIsHome === false && styles.roleChipTextActive,
+                                ]}
+                              >
+                                Ude
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+
+                        {/* Liga */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Liga (valgfri)</Text>
+                          <TextInput
+                            value={matchLeague}
+                            onChangeText={setMatchLeague}
+                            placeholder="Fx U15 A, 2. division"
+                            placeholderTextColor="rgba(255,255,255,0.35)"
+                            style={styles.input}
+                            autoCapitalize="none"
+                          />
+                        </View>
+
+                        {/* Modstander */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Modstander</Text>
+                          <TextInput
+                            value={matchOpponent}
+                            onChangeText={setMatchOpponent}
+                            placeholder="Fx Køge, Brøndby"
+                            placeholderTextColor="rgba(255,255,255,0.35)"
+                            style={styles.input}
+                            autoCapitalize="words"
+                          />
+                        </View>
+
+                        {/* Type */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Type (valgfri)</Text>
+                          <TextInput
+                            value={matchType}
+                            onChangeText={setMatchType}
+                            placeholder="Fx Træningskamp, Turnering"
+                            placeholderTextColor="rgba(255,255,255,0.35)"
+                            style={styles.input}
+                            autoCapitalize="sentences"
+                          />
+                        </View>
+
+                        {/* Noter */}
+                        <View style={styles.inputWrap}>
+                          <Text style={styles.inputLabel}>Noter (valgfri)</Text>
+                          <TextInput
+                            value={matchNotes}
+                            onChangeText={setMatchNotes}
+                            placeholder="Ekstra info til spillerne"
+                            placeholderTextColor="rgba(255,255,255,0.35)"
+                            style={[styles.input, { minHeight: 60 }]}
+                            multiline
+                          />
+                        </View>
+
+                      </ScrollView>
+                    </KeyboardAvoidingView>
+                  </View>
+
+                  <View style={{ paddingTop: 12 }}>            
+                    <Pressable
+                      onPress={createMatch}
+                      disabled={creatingMatch}
+                      style={[styles.primaryButton, creatingMatch && { opacity: 0.7 }]}
+                    >
+                      {creatingMatch ? (
+                        <Text style={styles.primaryButtonText}>Opretter...</Text>
+                      ) : (
+                        <Text style={styles.primaryButtonText}>Opret kamp</Text>
+                      )}
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        resetCreateMatchForm();
+                        setMode("main");
+                      }}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : mode === "players" ? (
+                <>
+                  {/* Players view */}
+                  <View style={{ flex: 1 }}>
+                    <View style={{ gap: 10 }}>
+                      <Text style={styles.sectionTitlePlayers}>Spillere</Text>
+
+                      {playersLoading ? (
+                        <Text style={styles.helpText}>Henter...</Text>
+                      ) : players.length === 0 ? (
+                        <Text style={styles.helpText}>Ingen whitelisted endnu.</Text>
+                      ) : (
+                        <ScrollView
+                          contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                          keyboardShouldPersistTaps="handled"
+                        >
+                          {players.map((p) => {
+                            const label = (p.name?.trim() || p.email).trim();
+                            const b = getBadgesForUser(p.email, p.role);
+
+                            return (
+                              <Pressable
+                                key={p.email}
+                                onPress={() => openEditPlayer(p)}
+                                style={styles.playerRow}
+                              >
+                                <View style={styles.playerLeft}>
+                                  <Text style={styles.playerName} numberOfLines={1}>
+                                    {label}
+                                  </Text>
+                                  {renderBadgesSmall(b)}
+                                </View>
+
+                                <Ionicons
+                                  name="chevron-forward"
+                                  size={16}
+                                  color={COLORS.textSoft}
+                                  style={{ opacity: 0.5 }}
+                                />
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1 }} />
+
+                    <Pressable
+                      onPress={() => setMode("main")}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : mode === "teams" ? (
+                <>
+                  {/* Teams view */}
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.sectionTitle}>Opret hold</Text>
+
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Holdnavn</Text>
+                      <TextInput
+                        value={newTeamName}
+                        onChangeText={setNewTeamName}
+                        placeholder="Fx Lido 1"
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        style={styles.input}
+                        autoCapitalize="words"
+                      />
+                    </View>
+
+                    <Pressable
+                      onPress={async () => {
+                        const name = newTeamName.trim();
+                        if (!name) {
+                          Alert.alert("Mangler", "Skriv et navn til holdet.");
+                          return;
+                        }
+
+                        setCreatingTeam(true);
+                        const { error } = await supabase
+                          .from("teams")
+                          .insert({ name });
+                        setCreatingTeam(false);
+
+                        if (error) {
+                          Alert.alert("Fejl", error.message);
+                          return;
+                        }
+
+                        setNewTeamName("");
+                        await loadTeams();
+                      }}
+                      disabled={creatingTeam}
+                      style={[styles.primaryButton, { marginTop: 4 }, creatingTeam && { opacity: 0.7 }]}
+                    >
+                      <Ionicons name="add-circle-outline" size={18} color={COLORS.bg} />
+                      <Text style={styles.primaryButtonText}>
+                        {creatingTeam ? "Opretter..." : "Opret hold"}
+                      </Text>
+                    </Pressable>
+
+                    {teamsLoading ? (
+                      <Text style={styles.helpText}>Henter hold...</Text>
+                    ) : teams.length === 0 ? (
+                      <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
+                    ) : (
+                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                        {teams.map((t) => (
                           <Pressable
-                            onPress={() =>
-                              Alert.alert(
-                                "Fjern spiller?",
-                                `Er du sikker på at du vil fjerne "${label}" fra ${selectedTeam?.name}?`,
-                                [
-                                  { text: "Annuller", style: "cancel" },
-                                  {
-                                    text: "Fjern",
-                                    style: "destructive",
-                                    onPress: () => removePlayerFromTeam(p),
-                                  },
-                                ]
-                              )
-                            }
-                            hitSlop={10}
+                            key={t.id}
+                            onPress={() => openTeamDetail(t)}
+                            style={styles.playerRow}
                           >
+                            <View style={styles.playerLeft}>
+                              <Text style={styles.playerName} numberOfLines={1}>
+                                {t.name}
+                              </Text>
+                            </View>
+
                             <Ionicons
-                              name="close-circle"
-                              size={18}
-                              color="rgba(255,82,82,0.9)"
+                              name="chevron-forward"
+                              size={16}
+                              color={COLORS.textSoft}
+                              style={{ opacity: 0.5 }}
                             />
                           </Pressable>
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-
-                <Pressable
-                  onPress={() => setMode("selectTeamPlayer")}
-                  style={[styles.primaryButton, { marginTop: 10 }]}
-                >
-                  <Ionicons name="person-add-outline" size={18} color={COLORS.bg} />
-                  <Text style={styles.primaryButtonText}>Tilføj spiller</Text>
-                </Pressable>
-
-                <View style={{ marginTop: 24 }}>
-                  <Pressable
-                    onPress={() => {
-                      if (!selectedTeam) return;
-                      deleteTeam(selectedTeam.id);
-                    }}
-                    style={styles.deleteTeamButton}
-                  >
-                    <Text style={styles.deleteTeamText}>Slet hold</Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <Pressable onPress={() => setMode("teams")} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "selectCaptain" ? (
-            <>
-              <View style={{ gap: 10 }}>
-                <Text style={styles.sectionTitlePlayers}>Vælg kaptajn</Text>
-
-                {playersLoading ? (
-                  <Text style={styles.helpText}>Henter spillere...</Text>
-                ) : players.length === 0 ? (
-                  <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
-                ) : (
-                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
-                    {players.map((p) => {
-                      const label = (p.name?.trim() || p.email).trim();
-                      const b = getBadgesForUser(p.email, p.role);
-
-                      return (
-                        <Pressable
-                          key={p.email}
-                          onPress={() => setCaptainForTeam(p)}
-                          style={styles.playerRow}
-                        >
-                          <View style={styles.playerLeft}>
-                            <Text style={styles.playerName} numberOfLines={1}>
-                              {label}
-                            </Text>
-                            {renderBadgesSmall(b)}
-                          </View>
-                          <Ionicons
-                            name="chevron-forward"
-                            size={16}
-                            color={COLORS.textSoft}
-                            style={{ opacity: 0.5 }}
-                          />
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : mode === "selectTeamPlayer" ? (
-            <>
-              <View style={{ gap: 10 }}>
-                <Text style={styles.sectionTitlePlayers}>Vælg spiller</Text>
-
-                {playersLoading ? (
-                  <Text style={styles.helpText}>Henter spillere...</Text>
-                ) : players.length === 0 ? (
-                  <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
-                ) : (
-                  <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
-                    {players.map((p) => {
-                      const label = (p.name?.trim() || p.email).trim();
-                      const b = getBadgesForUser(p.email, p.role);
-
-                      return (
-                        <Pressable
-                          key={p.email}
-                          onPress={() => addPlayerToTeam(p)}
-                          style={styles.playerRow}
-                        >
-                          <View style={styles.playerLeft}>
-                            <Text style={styles.playerName} numberOfLines={1}>
-                              {label}
-                            </Text>
-                            {renderBadgesSmall(b)}
-                          </View>
-                          <Ionicons
-                            name="chevron-forward"
-                            size={16}
-                            color={COLORS.textSoft}
-                            style={{ opacity: 0.5 }}
-                          />
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-
-              <View style={{ flex: 1 }} />
-
-              <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          ) : (
-            <>
-              {/* Edit view */}
-              <Text style={styles.sectionTitlePlayers}>Rediger spiller</Text>
-
-              <View style={{ gap: 10 }}>
-                {/* Navn */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Navn</Text>
-                  <TextInput
-                    value={editName}
-                    onChangeText={setEditName}
-                    placeholder="Navn"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    style={styles.input}
-                    autoCapitalize="words"
-                  />
-                </View>
-
-                {/* Email (read-only) */}
-                <View style={styles.row}>
-                  <View className="roleIcon" style={styles.roleIcon}>
-                    <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
-                  <Text style={styles.rowText} numberOfLines={1}>
-                    {selectedPlayer?.email ?? ""}
-                  </Text>
-                </View>
 
-                {/* Holdkaptajn for */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Holdkaptajn for:</Text>
+                  <View style={{ flex: 1 }} />
 
-                  {editCaptainTeams.length === 0 ? (
-                    <Text style={styles.helpText}>Ikke kaptajn for nogle hold.</Text>
-                  ) : (
-                    <View style={{ gap: 6 }}>
-                      {editCaptainTeams.map((t) => (
-                        <View key={t.id} style={styles.teamChip}>
-                          <Text style={styles.teamChipText}>{t.name}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                {/* Spiller på hold */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Spiller på hold:</Text>
-
-                  {editPlayerTeams.length === 0 ? (
-                    <Text style={styles.helpText}>Ikke tilknyttet nogen hold.</Text>
-                  ) : (
-                    <View style={{ gap: 6 }}>
-                      {editPlayerTeams.map((t) => (
-                        <View key={t.id} style={styles.teamChip}>
-                          <Text style={styles.teamChipText}>{t.name}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                {/* Giv admin-knap – kun hvis ikke admin i forvejen */}
-                {!editIsAdmin && (
                   <Pressable
-                    onPress={grantAdminToPlayer}
-                    style={[styles.primaryButton, { marginTop: 4 }]}
+                    onPress={() => setMode("main")}
+                    style={styles.secondaryButton}
                   >
-                    <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.bg} />
-                    <Text style={styles.primaryButtonText}>Giv admin</Text>
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
                   </Pressable>
-                )}
-              </View>
+                </>
+              ) : mode === "teamDetail" ? (
+                <>
+                  {/* Team detail view */}
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.sectionTitlePlayers}>
+                      {selectedTeam ? selectedTeam.name : "Hold"}
+                    </Text>
 
-              <View style={{ flex: 1 }} />
+                    {/* Kaptajn sektion */}
+                    <Text style={styles.sectionTitle}>Holdkaptajn</Text>
 
-              <Pressable
-                onPress={savePlayerEdits}
-                disabled={savingEdit}
-                style={[styles.primaryButton, savingEdit && { opacity: 0.7 }]}
-              >
-                <Ionicons name="save-outline" size={18} color={COLORS.bg} />
-                <Text style={styles.primaryButtonText}>
-                  {savingEdit ? "Gemmer..." : "Gem ændringer"}
-                </Text>
-              </Pressable>
+                    <Pressable
+                      onPress={() => setMode("selectCaptain")}
+                      style={styles.inputWrap}
+                    >
+                      {teamLoading ? (
+                        <Text style={styles.helpText}>Henter...</Text>
+                      ) : teamCaptain ? (
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Text style={styles.playerName} numberOfLines={1}>
+                              {teamCaptain.name ?? teamCaptain.email}
+                            </Text>
+                            {renderBadgesSmall(getBadgesForUser(teamCaptain.email, teamCaptain.role))}
+                          </View>
 
-              <Pressable
-                onPress={deletePlayer}
-                disabled={deleting}
-                style={[styles.dangerButton, deleting && { opacity: 0.7 }]}
-              >
-                <Ionicons name="trash-outline" size={18} color={COLORS.text} />
-                <Text style={styles.dangerButtonText}>
-                  {deleting ? "Sletter..." : "Slet spiller"}
-                </Text>
-              </Pressable>
+                          <Ionicons name="chevron-forward" size={16} color={COLORS.textSoft} style={{ opacity: 0.5 }} />
+                        </View>
+                      ) : (
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <Text style={styles.helpText}>Ingen kaptajn valgt</Text>
+                          <Ionicons name="add-circle-outline" size={20} color={COLORS.accent} />
+                        </View>
+                      )}
+                    </Pressable>
 
-              <Pressable
-                onPress={() => setMode("players")}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>Tilbage</Text>
-              </Pressable>
-            </>
-          )}
-        </SafeAreaView>
+                    {/* Slet kaptajn knap hvis der er en */}
+                    {teamCaptain && (
+                      <Pressable
+                        onPress={() =>
+                          Alert.alert(
+                            "Fjern kaptajn?",
+                            "Er du sikker på at du vil fjerne denne kaptajn?",
+                            [
+                              { text: "Annuller", style: "cancel" },
+                              {
+                                text: "Fjern",
+                                style: "destructive",
+                                onPress: () => clearCaptainForTeam(),
+                              },
+                            ]
+                          )
+                        }
+                        style={styles.dangerButton}
+                      >
+                        <Ionicons name="trash-outline" size={16} color={COLORS.text} />
+                        <Text style={styles.dangerButtonText}>Fjern kaptajn</Text>
+                      </Pressable>
+                    )}
+
+                    {/* Spillere på holdet */}
+                    <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Spillere</Text>
+
+                    {teamLoading ? (
+                      <Text style={styles.helpText}>Henter spillere...</Text>
+                    ) : teamPlayers.length === 0 ? (
+                      <Text style={styles.helpText}>Ingen spillere på holdet endnu.</Text>
+                    ) : (
+                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                        {teamPlayers.map((p) => {
+                          const label = (p.name?.trim() || p.email).trim();
+                          const { isAdmin, isCaptainHere, isPlayerHere } =
+                            getBadgesForUserOnTeam(p, selectedTeam?.id);
+
+                          return (
+                            <View key={p.email} style={styles.playerRow}>
+                              <View style={styles.playerLeft}>
+                                <Text style={styles.playerName} numberOfLines={1}>
+                                  {label}
+                                </Text>
+
+                                {/* admin badge */}
+                                {isAdmin && (
+                                  <Ionicons
+                                    name="shield-checkmark-outline"
+                                    size={16}
+                                    color={COLORS.accent}
+                                    style={{ marginLeft: 8 }}
+                                  />
+                                )}
+
+                                {/* kaptajn-badge (kun hvis kaptajn for DETTE hold) */}
+                                {isCaptainHere && (
+                                  <Ionicons
+                                    name="flag-outline"
+                                    size={16}
+                                    color="#7FB2FF"
+                                    style={{ marginLeft: 6 }}
+                                  />
+                                )}
+
+                                {/* spiller-badge (de er jo spillere på det her hold) */}
+                                {isPlayerHere && (
+                                  <Ionicons
+                                    name="navigate-outline"
+                                    size={16}
+                                    color="#3EE08E"
+                                    style={{ marginLeft: 6 }}
+                                  />
+                                )}
+                              </View>
+
+                              {/* den røde remove-knap du allerede har */}
+                              <Pressable
+                                onPress={() =>
+                                  Alert.alert(
+                                    "Fjern spiller?",
+                                    `Er du sikker på at du vil fjerne "${label}" fra ${selectedTeam?.name}?`,
+                                    [
+                                      { text: "Annuller", style: "cancel" },
+                                      {
+                                        text: "Fjern",
+                                        style: "destructive",
+                                        onPress: () => removePlayerFromTeam(p),
+                                      },
+                                    ]
+                                  )
+                                }
+                                hitSlop={10}
+                              >
+                                <Ionicons
+                                  name="close-circle"
+                                  size={18}
+                                  color="rgba(255,82,82,0.9)"
+                                />
+                              </Pressable>
+                            </View>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+
+                    <Pressable
+                      onPress={() => setMode("selectTeamPlayer")}
+                      style={[styles.primaryButton, { marginTop: 10 }]}
+                    >
+                      <Ionicons name="person-add-outline" size={18} color={COLORS.bg} />
+                      <Text style={styles.primaryButtonText}>Tilføj spiller</Text>
+                    </Pressable>
+
+                    <View style={{ marginTop: 24 }}>
+                      <Pressable
+                        onPress={() => {
+                          if (!selectedTeam) return;
+                          deleteTeam(selectedTeam.id);
+                        }}
+                        style={styles.deleteTeamButton}
+                      >
+                        <Text style={styles.deleteTeamText}>Slet hold</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  <View style={{ flex: 1 }} />
+
+                  <Pressable onPress={() => setMode("teams")} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              ) : mode === "selectCaptain" ? (
+                <>
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.sectionTitlePlayers}>Vælg kaptajn</Text>
+
+                    {playersLoading ? (
+                      <Text style={styles.helpText}>Henter spillere...</Text>
+                    ) : players.length === 0 ? (
+                      <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
+                    ) : (
+                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                        {players.map((p) => {
+                          const label = (p.name?.trim() || p.email).trim();
+                          const b = getBadgesForUser(p.email, p.role);
+
+                          return (
+                            <Pressable
+                              key={p.email}
+                              onPress={() => setCaptainForTeam(p)}
+                              style={styles.playerRow}
+                            >
+                              <View style={styles.playerLeft}>
+                                <Text style={styles.playerName} numberOfLines={1}>
+                                  {label}
+                                </Text>
+                                {renderBadgesSmall(b)}
+                              </View>
+                              <Ionicons
+                                name="chevron-forward"
+                                size={16}
+                                color={COLORS.textSoft}
+                                style={{ opacity: 0.5 }}
+                              />
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1 }} />
+
+                  <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              ) : mode === "selectTeamPlayer" ? (
+                <>
+                  <View style={{ gap: 10 }}>
+                    <Text style={styles.sectionTitlePlayers}>Vælg spiller</Text>
+
+                    {playersLoading ? (
+                      <Text style={styles.helpText}>Henter spillere...</Text>
+                    ) : players.length === 0 ? (
+                      <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
+                    ) : (
+                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                        {players.map((p) => {
+                          const label = (p.name?.trim() || p.email).trim();
+                          const b = getBadgesForUser(p.email, p.role);
+
+                          return (
+                            <Pressable
+                              key={p.email}
+                              onPress={() => addPlayerToTeam(p)}
+                              style={styles.playerRow}
+                            >
+                              <View style={styles.playerLeft}>
+                                <Text style={styles.playerName} numberOfLines={1}>
+                                  {label}
+                                </Text>
+                                {renderBadgesSmall(b)}
+                              </View>
+                              <Ionicons
+                                name="chevron-forward"
+                                size={16}
+                                color={COLORS.textSoft}
+                                style={{ opacity: 0.5 }}
+                              />
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1 }} />
+
+                  <Pressable onPress={() => setMode("teamDetail")} style={styles.secondaryButton}>
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  {/* Edit view */}
+                  <Text style={styles.sectionTitlePlayers}>Rediger spiller</Text>
+
+                  <View style={{ gap: 10 }}>
+                    {/* Navn */}
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Navn</Text>
+                      <TextInput
+                        value={editName}
+                        onChangeText={setEditName}
+                        placeholder="Navn"
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        style={styles.input}
+                        autoCapitalize="words"
+                      />
+                    </View>
+
+                    {/* Email (read-only) */}
+                    <View style={styles.row}>
+                      <View className="roleIcon" style={styles.roleIcon}>
+                        <Ionicons name="mail-outline" size={18} color={COLORS.accent} />
+                      </View>
+                      <Text style={styles.rowText} numberOfLines={1}>
+                        {selectedPlayer?.email ?? ""}
+                      </Text>
+                    </View>
+
+                    {/* Holdkaptajn for */}
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Holdkaptajn for:</Text>
+
+                      {editCaptainTeams.length === 0 ? (
+                        <Text style={styles.helpText}>Ikke kaptajn for nogle hold.</Text>
+                      ) : (
+                        <View style={{ gap: 6 }}>
+                          {editCaptainTeams.map((t) => (
+                            <View key={t.id} style={styles.teamChip}>
+                              <Text style={styles.teamChipText}>{t.name}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Spiller på hold */}
+                    <View style={styles.inputWrap}>
+                      <Text style={styles.inputLabel}>Spiller på hold:</Text>
+
+                      {editPlayerTeams.length === 0 ? (
+                        <Text style={styles.helpText}>Ikke tilknyttet nogen hold.</Text>
+                      ) : (
+                        <View style={{ gap: 6 }}>
+                          {editPlayerTeams.map((t) => (
+                            <View key={t.id} style={styles.teamChip}>
+                              <Text style={styles.teamChipText}>{t.name}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Giv admin-knap – kun hvis ikke admin i forvejen */}
+                    {!editIsAdmin && (
+                      <Pressable
+                        onPress={grantAdminToPlayer}
+                        style={[styles.primaryButton, { marginTop: 4 }]}
+                      >
+                        <Ionicons name="shield-checkmark-outline" size={18} color={COLORS.bg} />
+                        <Text style={styles.primaryButtonText}>Giv admin</Text>
+                      </Pressable>
+                    )}
+                  </View>
+
+                  <View style={{ flex: 1 }} />
+
+                  <Pressable
+                    onPress={savePlayerEdits}
+                    disabled={savingEdit}
+                    style={[styles.primaryButton, savingEdit && { opacity: 0.7 }]}
+                  >
+                    <Ionicons name="save-outline" size={18} color={COLORS.bg} />
+                    <Text style={styles.primaryButtonText}>
+                      {savingEdit ? "Gemmer..." : "Gem ændringer"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={deletePlayer}
+                    disabled={deleting}
+                    style={[styles.dangerButton, deleting && { opacity: 0.7 }]}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={COLORS.text} />
+                    <Text style={styles.dangerButtonText}>
+                      {deleting ? "Sletter..." : "Slet spiller"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setMode("players")}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonText}>Tilbage</Text>
+                  </Pressable>
+                </>
+              )}
+            </KeyboardDismissView>
+          </SafeAreaView>
       </Animated.View>
     </View>
   );

@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
+import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { router } from "expo-router";
 import { supabase } from "../lib/supabase";
 import { useSession } from "../hooks/useSession";
@@ -138,92 +139,94 @@ export default function Login() {
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.inner}>
-          {/* TOP: Titel i øverste halvdel */}
-          <View style={styles.topSection}>
-            <Text style={styles.appTitle}>Velkommen til Lido!</Text>
-            <Text style={styles.appSubtitle}>Log ind for at se hold og kampprogrammer</Text>
-          </View>
-
-          {/* MIDT: Card + lille hjælpetekst lige under */}
-          <View style={styles.centerSection}>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Log ind</Text>
-
-              <View style={{ gap: 10 }}>
-                {/* Email */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Email</Text>
-                  <TextInput
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="mail@domæne.dk"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    style={styles.input}
-                  />
-                </View>
-
-                {/* Password */}
-                <View style={styles.inputWrap}>
-                  <Text style={styles.inputLabel}>Password</Text>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Min. 8 tegn"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    secureTextEntry
-                    autoCapitalize="none"
-                    style={styles.input}
-                  />
-                </View>
-
-                <Text style={styles.helpText}>
-                  Din email skal være godkendt af klubben, før du kan oprette en bruger.
-                </Text>
-              </View>
-
-              {/* Knapper */}
-              <View style={{ marginTop: 18, gap: 10 }}>
-                <Pressable
-                  onPress={signIn}
-                  disabled={submitting !== "none"}
-                  style={[
-                    styles.primaryButton,
-                    submitting !== "none" && { opacity: 0.8 },
-                  ]}
-                >
-                  {isLoggingIn ? (
-                    <ActivityIndicator size="small" color={COLORS.bg} />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Log ind</Text>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  onPress={signUp}
-                  disabled={submitting !== "none"}
-                  style={[
-                    styles.secondaryButton,
-                    submitting !== "none" && { opacity: 0.8 },
-                  ]}
-                >
-                  {isSigningUp ? (
-                    <ActivityIndicator size="small" color={COLORS.text} />
-                  ) : (
-                    <Text style={styles.secondaryButtonText}>Opret bruger</Text>
-                  )}
-                </Pressable>
-              </View>
+        <KeyboardDismissView style={{ flex: 1 }}>
+          <View style={styles.inner}>
+            {/* TOP: Titel i øverste halvdel */}
+            <View style={styles.topSection}>
+              <Text style={styles.appTitle}>Velkommen til Lido!</Text>
+              <Text style={styles.appSubtitle}>Log ind for at se hold og kampprogrammer</Text>
             </View>
 
-            {/* Hjælpetekst lige under kortet */}
-            <Text style={styles.footerText}>
-              Har du problemer med login, så tag fat i din træner eller admin.
-            </Text>
+            {/* MIDT: Card + lille hjælpetekst lige under */}
+            <View style={styles.centerSection}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Log ind</Text>
+
+                <View style={{ gap: 10 }}>
+                  {/* Email */}
+                  <View style={styles.inputWrap}>
+                    <Text style={styles.inputLabel}>Email</Text>
+                    <TextInput
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="mail@domæne.dk"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      style={styles.input}
+                    />
+                  </View>
+
+                  {/* Password */}
+                  <View style={styles.inputWrap}>
+                    <Text style={styles.inputLabel}>Password</Text>
+                    <TextInput
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Min. 8 tegn"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      secureTextEntry
+                      autoCapitalize="none"
+                      style={styles.input}
+                    />
+                  </View>
+
+                  <Text style={styles.helpText}>
+                    Din email skal være godkendt af klubben, før du kan oprette en bruger.
+                  </Text>
+                </View>
+
+                {/* Knapper */}
+                <View style={{ marginTop: 18, gap: 10 }}>
+                  <Pressable
+                    onPress={signIn}
+                    disabled={submitting !== "none"}
+                    style={[
+                      styles.primaryButton,
+                      submitting !== "none" && { opacity: 0.8 },
+                    ]}
+                  >
+                    {isLoggingIn ? (
+                      <ActivityIndicator size="small" color={COLORS.bg} />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Log ind</Text>
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    onPress={signUp}
+                    disabled={submitting !== "none"}
+                    style={[
+                      styles.secondaryButton,
+                      submitting !== "none" && { opacity: 0.8 },
+                    ]}
+                  >
+                    {isSigningUp ? (
+                      <ActivityIndicator size="small" color={COLORS.text} />
+                    ) : (
+                      <Text style={styles.secondaryButtonText}>Opret bruger</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Hjælpetekst lige under kortet */}
+              <Text style={styles.footerText}>
+                Har du problemer med login, så tag fat i din træner eller admin.
+              </Text>
+            </View>
           </View>
-        </View>
+        </KeyboardDismissView>
       </KeyboardAvoidingView>
     </View>
   );
