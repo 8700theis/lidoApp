@@ -1936,11 +1936,12 @@ const grantAdminToPlayer = async () => {
                       <ScrollView
                         style={{ flex: 1 }}
                         contentContainerStyle={{
-                          paddingBottom: 24,
+                          paddingBottom: 160,
                           gap: 10,
                         }}
                         showsVerticalScrollIndicator={false}
                         keyboardShouldPersistTaps="handled"
+                        keyboardDismissMode="interactive"
                       >
                         {/* Holdvalg */}
                         <View style={styles.inputWrap}>
