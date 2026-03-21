@@ -2,7 +2,7 @@ import React from "react";
 import {
   Keyboard,
   Platform,
-  Pressable,
+  TouchableWithoutFeedback,
   View,
   StyleProp,
   ViewStyle,
@@ -20,11 +20,10 @@ export default function KeyboardDismissView({ children, style }: Props) {
   }
 
   return (
-    <Pressable
-      style={[{ flex: 1 }, style]}
-      onPress={Keyboard.dismiss}
-    >
-      <View style={{ flex: 1 }}>{children}</View>
-    </Pressable>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={[{ flex: 1 }, style]}>
+        {children}
+      </View>
+    </TouchableWithoutFeedback>
   );
 }

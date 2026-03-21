@@ -336,6 +336,7 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
 
   const panelX = useRef(new Animated.Value(offscreenX)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const createMatchScrollRef = useRef<ScrollView | null>(null);
 
   const open = () => {
     Animated.parallel([
@@ -528,28 +529,28 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
     return 2; // spiller + alt andet
   };
 
-// Læg dette et sted efter dine andre helpers, fx under roleRank:
-const getBadgesForUserOnTeam = (
-  user: { email: string; role: string },
-  teamId?: string
-  ) => {
-  const email = (user.email || "").toLowerCase();
+  // Læg dette et sted efter dine andre helpers, fx under roleRank:
+  const getBadgesForUserOnTeam = (
+    user: { email: string; role: string },
+    teamId?: string
+    ) => {
+    const email = (user.email || "").toLowerCase();
 
-  // admin er global – vi bruger stadig allowed_users.role til det
-  const isAdmin = (user.role || "").toLowerCase() === "admin";
+    // admin er global – vi bruger stadig allowed_users.role til det
+    const isAdmin = (user.role || "").toLowerCase() === "admin";
 
-  // kaptajn: kun hvis personen er kaptajn for DETTE hold
-  const isCaptainHere =
-    !!teamId &&
-    !!teamCaptain &&
-    teamCaptain.email.toLowerCase() === email &&
-    selectedTeam?.id === teamId;
+    // kaptajn: kun hvis personen er kaptajn for DETTE hold
+    const isCaptainHere =
+      !!teamId &&
+      !!teamCaptain &&
+      teamCaptain.email.toLowerCase() === email &&
+      selectedTeam?.id === teamId;
 
-  // spiller: i "Spillere" på et hold er de med i listen → så ja
-  const isPlayerHere = true;
+    // spiller: i "Spillere" på et hold er de med i listen → så ja
+    const isPlayerHere = true;
 
-  return { isAdmin, isCaptainHere, isPlayerHere };
-};
+    return { isAdmin, isCaptainHere, isPlayerHere };
+  };
 
   const resetCreateForm = () => {
     setNewName("");
@@ -634,6 +635,15 @@ const getBadgesForUserOnTeam = (
 
     resetCreateForm();
     setMode("main");
+  };
+
+  const scrollCreateMatchTo = (y: number) => {
+    setTimeout(() => {
+      createMatchScrollRef.current?.scrollTo({
+        y,
+        animated: true,
+      });
+    }, 120);
   };
 
   const createMatch = async () => {
@@ -1934,6 +1944,7 @@ const grantAdminToPlayer = async () => {
                     >
                       {/* Scrollable content */}
                       <ScrollView
+                        ref={createMatchScrollRef}
                         style={{ flex: 1 }}
                         contentContainerStyle={{
                           paddingBottom: 160,
@@ -2058,7 +2069,7 @@ const grantAdminToPlayer = async () => {
                           </Text>
                         </View>
 
-                                        {signupMode === "preselected" && (
+                        {signupMode === "preselected" && (
                           <View style={[styles.inputWrap, { marginTop: 10 }]}>
                             <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
 
@@ -2174,6 +2185,7 @@ const grantAdminToPlayer = async () => {
                           <Text style={styles.inputLabel}>Liga (valgfri)</Text>
                           <TextInput
                             value={matchLeague}
+                            onFocus={() => scrollCreateMatchTo(260)}
                             onChangeText={setMatchLeague}
                             placeholder="Fx U15 A, 2. division"
                             placeholderTextColor="rgba(255,255,255,0.35)"
@@ -2186,6 +2198,7 @@ const grantAdminToPlayer = async () => {
                         <View style={styles.inputWrap}>
                           <Text style={styles.inputLabel}>Modstander</Text>
                           <TextInput
+                            onFocus={() => scrollCreateMatchTo(340)}
                             value={matchOpponent}
                             onChangeText={setMatchOpponent}
                             placeholder="Fx Køge, Brøndby"
@@ -2200,6 +2213,7 @@ const grantAdminToPlayer = async () => {
                           <Text style={styles.inputLabel}>Type (valgfri)</Text>
                           <TextInput
                             value={matchType}
+                            onFocus={() => scrollCreateMatchTo(430)}
                             onChangeText={setMatchType}
                             placeholder="Fx Træningskamp, Turnering"
                             placeholderTextColor="rgba(255,255,255,0.35)"
@@ -2213,6 +2227,7 @@ const grantAdminToPlayer = async () => {
                           <Text style={styles.inputLabel}>Noter (valgfri)</Text>
                           <TextInput
                             value={matchNotes}
+                            onFocus={() => scrollCreateMatchTo(620)}
                             onChangeText={setMatchNotes}
                             placeholder="Ekstra info til spillerne"
                             placeholderTextColor="rgba(255,255,255,0.35)"
