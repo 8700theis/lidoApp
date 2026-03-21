@@ -1423,7 +1423,6 @@ const grantAdminToPlayer = async () => {
       >
 
           <SafeAreaView style={styles.panelInner} edges={["top", "bottom"]}>
-            <KeyboardDismissView style={{ flex: 1 }}>
               {/* ✅ Header bliver ALTID den samme (profil + badge + email) */}
               <View style={styles.headerRow}>
                 <View  style={{ flex: 1, paddingRight: 10 }}>
@@ -1740,7 +1739,7 @@ const grantAdminToPlayer = async () => {
                   </Pressable>
                 </>
               ) : mode === "create" ? (
-                <>
+                <KeyboardDismissView style={{ flex: 1 }}>
                   {/* Header-tekst under profil-headeren */}
                   <Text style={styles.sectionTitle}>Opret spiller</Text>
 
@@ -1931,9 +1930,9 @@ const grantAdminToPlayer = async () => {
                   >
                     <Text style={styles.secondaryButtonText}>Tilbage</Text>
                   </Pressable>
-                </>
+                </KeyboardDismissView>
               ) : mode === "createMatch" ? (
-                <>
+                <KeyboardDismissView style={{ flex: 1 }}>
                   <Text style={styles.sectionTitle}>Opret kamp</Text>
 
                   <View style={{ flex: 1 }}>
@@ -2263,7 +2262,7 @@ const grantAdminToPlayer = async () => {
                       <Text style={styles.secondaryButtonText}>Tilbage</Text>
                     </Pressable>
                   </View>
-                </>
+                </KeyboardDismissView>
               ) : mode === "players" ? (
                 <>
                   {/* Players view */}
@@ -2277,6 +2276,7 @@ const grantAdminToPlayer = async () => {
                         <Text style={styles.helpText}>Ingen whitelisted endnu.</Text>
                       ) : (
                         <ScrollView
+                          style={{ flex: 1 }}
                           contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
                           keyboardShouldPersistTaps="handled"
                         >
@@ -2374,7 +2374,10 @@ const grantAdminToPlayer = async () => {
                     ) : teams.length === 0 ? (
                       <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
                     ) : (
-                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                      <ScrollView 
+                        style={{ flex: 1 }} 
+                        contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                        >
                         {teams.map((t) => (
                           <Pressable
                             key={t.id}
@@ -2476,7 +2479,10 @@ const grantAdminToPlayer = async () => {
                     ) : teamPlayers.length === 0 ? (
                       <Text style={styles.helpText}>Ingen spillere på holdet endnu.</Text>
                     ) : (
-                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                      <ScrollView 
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                        >
                         {teamPlayers.map((p) => {
                           const label = (p.name?.trim() || p.email).trim();
                           const { isAdmin, isCaptainHere, isPlayerHere } =
@@ -2587,7 +2593,10 @@ const grantAdminToPlayer = async () => {
                     ) : players.length === 0 ? (
                       <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
                     ) : (
-                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                      <ScrollView 
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                        >
                         {players.map((p) => {
                           const label = (p.name?.trim() || p.email).trim();
                           const b = getBadgesForUser(p.email, p.role);
@@ -2633,7 +2642,10 @@ const grantAdminToPlayer = async () => {
                     ) : players.length === 0 ? (
                       <Text style={styles.helpText}>Ingen whitelistede spillere.</Text>
                     ) : (
-                      <ScrollView contentContainerStyle={{ gap: 10, paddingBottom: 6 }}>
+                      <ScrollView
+                        style={{ flex: 1 }}
+                        contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
+                        >
                         {players.map((p) => {
                           const label = (p.name?.trim() || p.email).trim();
                           const b = getBadgesForUser(p.email, p.role);
@@ -2670,7 +2682,7 @@ const grantAdminToPlayer = async () => {
                   </Pressable>
                 </>
               ) : (
-                <>
+                <KeyboardDismissView style={{ flex: 1 }}>
                   {/* Edit view */}
                   <Text style={styles.sectionTitlePlayers}>Rediger spiller</Text>
 
@@ -2774,9 +2786,8 @@ const grantAdminToPlayer = async () => {
                   >
                     <Text style={styles.secondaryButtonText}>Tilbage</Text>
                   </Pressable>
-                </>
+                </KeyboardDismissView>
               )}
-            </KeyboardDismissView>
           </SafeAreaView>
       </Animated.View>
     </View>
