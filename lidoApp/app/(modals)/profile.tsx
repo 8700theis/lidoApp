@@ -15,6 +15,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { router } from "expo-router";
@@ -1932,8 +1934,7 @@ const grantAdminToPlayer = async () => {
                   </Pressable>
                 </KeyboardDismissView>
               ) : mode === "createMatch" ? (
-                <KeyboardDismissView style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Opret kamp</Text>
+                <>
 
                   <View style={{ flex: 1 }}>
                     <KeyboardAvoidingView
@@ -1946,295 +1947,300 @@ const grantAdminToPlayer = async () => {
                         ref={createMatchScrollRef}
                         style={{ flex: 1 }}
                         contentContainerStyle={{
+                          flexGrow: 1,
                           paddingBottom: 160,
                           gap: 10,
                         }}
                         showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
-                        keyboardDismissMode="interactive"
-                      >
-                        {/* Holdvalg */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Hold</Text>
+                        keyboardShouldPersistTaps="always"
+                        keyboardDismissMode="on-drag"
+                      > 
+                        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.sectionTitle}>Opret kamp</Text>
+                            {/* Holdvalg */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Hold</Text>
 
-                          {teams.length === 0 ? (
-                            <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
-                          ) : (
-                            <View style={styles.rolePicker}>
-                              {teams.map((t) => {
-                                const isSelected = matchTeamId === t.id;
-                                return (
-                                  <Pressable
-                                    key={t.id}
-                                    onPress={() => setMatchTeamId(t.id)}
+                              {teams.length === 0 ? (
+                                <Text style={styles.helpText}>Ingen hold oprettet endnu.</Text>
+                              ) : (
+                                <View style={styles.rolePicker}>
+                                  {teams.map((t) => {
+                                    const isSelected = matchTeamId === t.id;
+                                    return (
+                                      <Pressable
+                                        key={t.id}
+                                        onPress={() => setMatchTeamId(t.id)}
+                                        style={[
+                                          styles.roleChip,
+                                          isSelected && styles.roleChipActive,
+                                        ]}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.roleChipText,
+                                            isSelected && styles.roleChipTextActive,
+                                          ]}
+                                        >
+                                          {t.name}
+                                        </Text>
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                              )}
+                            </View>
+
+                            {/* Opret kamp som */}
+                            <View style={{ marginTop: 16 }}>
+                              <Text
+                                style={{
+                                  color: COLORS.textSoft,
+                                  fontSize: 13,
+                                  marginBottom: 8,
+                                }}
+                              >
+                                Opret kamp som:
+                              </Text>
+
+                              <View style={{ flexDirection: "row", gap: 8 }}>
+                                {/* Klarmelding */}
+                                <Pressable
+                                  onPress={() => setSignupMode("availability")}
+                                  style={[
+                                    styles.modeChip,
+                                    signupMode === "availability" && styles.modeChipActive,
+                                  ]}
+                                >
+                                  <Text
                                     style={[
-                                      styles.roleChip,
-                                      isSelected && styles.roleChipActive,
+                                      styles.modeChipText,
+                                      signupMode === "availability" && styles.modeChipTextActive,
                                     ]}
                                   >
-                                    <Text
-                                      style={[
-                                        styles.roleChipText,
-                                        isSelected && styles.roleChipTextActive,
-                                      ]}
-                                    >
-                                      {t.name}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })}
+                                    Klarmelding
+                                  </Text>
+                                </Pressable>
+
+                                {/* Sæt hold */}
+                                <Pressable
+                                  onPress={() => setSignupMode("preselected")}
+                                  style={[
+                                    styles.modeChip,
+                                    signupMode === "preselected" && styles.modeChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.modeChipText,
+                                      signupMode === "preselected" && styles.modeChipTextActive,
+                                    ]}
+                                  >
+                                    Sæt hold
+                                  </Text>
+                                </Pressable>
+
+                                {/* Låst */}
+                                <Pressable
+                                  onPress={() => setSignupMode("locked")}
+                                  style={[
+                                    styles.modeChip,
+                                    signupMode === "locked" && styles.modeChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.modeChipText,
+                                      signupMode === "locked" && styles.modeChipTextActive,
+                                    ]}
+                                  >
+                                    Låst
+                                  </Text>
+                                </Pressable>
+                              </View>
+
+                              <Text
+                                style={{
+                                  color: COLORS.textSoft,
+                                  fontSize: 11,
+                                  marginTop: 6,
+                                }}
+                              >
+                                • Klarmelding: spillere kan melde klar/ikke klar.{"\n"}
+                                • Sæt hold: ingen klarmelding, kampen er sat på forhånd.{"\n"}
+                                • Låst: kamp oprettet uden spillerstatus – kan frigives senere.
+                              </Text>
                             </View>
-                          )}
-                        </View>
 
-                        {/* Opret kamp som */}
-                        <View style={{ marginTop: 16 }}>
-                          <Text
-                            style={{
-                              color: COLORS.textSoft,
-                              fontSize: 13,
-                              marginBottom: 8,
-                            }}
-                          >
-                            Opret kamp som:
-                          </Text>
+                            {signupMode === "preselected" && (
+                              <View style={[styles.inputWrap, { marginTop: 10 }]}>
+                                <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
 
-                          <View style={{ flexDirection: "row", gap: 8 }}>
-                            {/* Klarmelding */}
-                            <Pressable
-                              onPress={() => setSignupMode("availability")}
-                              style={[
-                                styles.modeChip,
-                                signupMode === "availability" && styles.modeChipActive,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.modeChipText,
-                                  signupMode === "availability" && styles.modeChipTextActive,
-                                ]}
-                              >
-                                Klarmelding
-                              </Text>
-                            </Pressable>
+                                {!matchTeamId ? (
+                                  <Text style={styles.helpText}>Vælg først et hold.</Text>
+                                ) : matchTeamPlayersLoading ? (
+                                  <Text style={styles.helpText}>Henter spillere...</Text>
+                                ) : matchTeamPlayers.length === 0 ? (
+                                  <Text style={styles.helpText}>
+                                    Der er endnu ingen spillere tilknyttet dette hold.
+                                  </Text>
+                                ) : (
+                                  <View style={{ gap: 8 }}>
+                                    {matchTeamPlayers.map((p) => {
+                                      const email = p.email.toLowerCase();
+                                      const isSelected = matchSelectedPlayers.includes(email);
 
-                            {/* Sæt hold */}
-                            <Pressable
-                              onPress={() => setSignupMode("preselected")}
-                              style={[
-                                styles.modeChip,
-                                signupMode === "preselected" && styles.modeChipActive,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.modeChipText,
-                                  signupMode === "preselected" && styles.modeChipTextActive,
-                                ]}
-                              >
-                                Sæt hold
-                              </Text>
-                            </Pressable>
-
-                            {/* Låst */}
-                            <Pressable
-                              onPress={() => setSignupMode("locked")}
-                              style={[
-                                styles.modeChip,
-                                signupMode === "locked" && styles.modeChipActive,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.modeChipText,
-                                  signupMode === "locked" && styles.modeChipTextActive,
-                                ]}
-                              >
-                                Låst
-                              </Text>
-                            </Pressable>
-                          </View>
-
-                          <Text
-                            style={{
-                              color: COLORS.textSoft,
-                              fontSize: 11,
-                              marginTop: 6,
-                            }}
-                          >
-                            • Klarmelding: spillere kan melde klar/ikke klar.{"\n"}
-                            • Sæt hold: ingen klarmelding, kampen er sat på forhånd.{"\n"}
-                            • Låst: kamp oprettet uden spillerstatus – kan frigives senere.
-                          </Text>
-                        </View>
-
-                        {signupMode === "preselected" && (
-                          <View style={[styles.inputWrap, { marginTop: 10 }]}>
-                            <Text style={styles.inputLabel}>Vælg spillere til kampen</Text>
-
-                            {!matchTeamId ? (
-                              <Text style={styles.helpText}>Vælg først et hold.</Text>
-                            ) : matchTeamPlayersLoading ? (
-                              <Text style={styles.helpText}>Henter spillere...</Text>
-                            ) : matchTeamPlayers.length === 0 ? (
-                              <Text style={styles.helpText}>
-                                Der er endnu ingen spillere tilknyttet dette hold.
-                              </Text>
-                            ) : (
-                              <View style={{ gap: 8 }}>
-                                {matchTeamPlayers.map((p) => {
-                                  const email = p.email.toLowerCase();
-                                  const isSelected = matchSelectedPlayers.includes(email);
-
-                                  return (
-                                    <Pressable
-                                      key={email}
-                                      onPress={() =>
-                                        setMatchSelectedPlayers((prev) =>
-                                          prev.includes(email)
-                                            ? prev.filter((e) => e !== email)
-                                            : [...prev, email]
-                                        )
-                                      }
-                                      style={[
-                                        styles.teamChip,
-                                        isSelected && styles.teamChipActive,
-                                      ]}
-                                    >
-                                      <Text style={styles.teamChipText}>
-                                        {p.name ?? p.email}
-                                      </Text>
-                                    </Pressable>
-                                  );
-                                })}
+                                      return (
+                                        <Pressable
+                                          key={email}
+                                          onPress={() =>
+                                            setMatchSelectedPlayers((prev) =>
+                                              prev.includes(email)
+                                                ? prev.filter((e) => e !== email)
+                                                : [...prev, email]
+                                            )
+                                          }
+                                          style={[
+                                            styles.teamChip,
+                                            isSelected && styles.teamChipActive,
+                                          ]}
+                                        >
+                                          <Text style={styles.teamChipText}>
+                                            {p.name ?? p.email}
+                                          </Text>
+                                        </Pressable>
+                                      );
+                                    })}
+                                  </View>
+                                )}
                               </View>
                             )}
+
+                            {/* Dato + tid */}
+                            <View style={{ flexDirection: "row", gap: 10 }}>
+                              <View style={[styles.inputWrap, { flex: 1 }]}>
+                                <Text style={styles.inputLabel}>Dato</Text>
+                                <TextInput
+                                  value={matchDate}
+                                  onChangeText={setMatchDate}
+                                  placeholder="2025-03-10"
+                                  placeholderTextColor="rgba(255,255,255,0.35)"
+                                  style={styles.input}
+                                  autoCapitalize="none"
+                                />
+                              </View>
+
+                              <View style={[styles.inputWrap, { flex: 1 }]}>
+                                <Text style={styles.inputLabel}>Tidspunkt</Text>
+                                <TextInput
+                                  value={matchTime}
+                                  onChangeText={setMatchTime}
+                                  placeholder="19:30"
+                                  placeholderTextColor="rgba(255,255,255,0.35)"
+                                  style={styles.input}
+                                  autoCapitalize="none"
+                                />
+                              </View>
+                            </View>
+
+                            {/* Hjemme / ude */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Bane</Text>
+                              <View style={styles.rolePicker}>
+                                <Pressable
+                                  onPress={() => setMatchIsHome(true)}
+                                  style={[
+                                    styles.roleChip,
+                                    matchIsHome === true && styles.roleChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.roleChipText,
+                                      matchIsHome === true && styles.roleChipTextActive,
+                                    ]}
+                                  >
+                                    Hjemme
+                                  </Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => setMatchIsHome(false)}
+                                  style={[
+                                    styles.roleChip,
+                                    matchIsHome === false && styles.roleChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.roleChipText,
+                                      matchIsHome === false && styles.roleChipTextActive,
+                                    ]}
+                                  >
+                                    Ude
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+
+                            {/* Liga */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Liga (valgfri)</Text>
+                              <TextInput
+                                value={matchLeague}
+                                onFocus={() => scrollCreateMatchTo(260)}
+                                onChangeText={setMatchLeague}
+                                placeholder="Fx U15 A, 2. division"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={styles.input}
+                                autoCapitalize="none"
+                              />
+                            </View>
+
+                            {/* Modstander */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Modstander</Text>
+                              <TextInput
+                                onFocus={() => scrollCreateMatchTo(340)}
+                                value={matchOpponent}
+                                onChangeText={setMatchOpponent}
+                                placeholder="Fx Køge, Brøndby"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={styles.input}
+                                autoCapitalize="words"
+                              />
+                            </View>
+
+                            {/* Type */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Type (valgfri)</Text>
+                              <TextInput
+                                value={matchType}
+                                onFocus={() => scrollCreateMatchTo(430)}
+                                onChangeText={setMatchType}
+                                placeholder="Fx Træningskamp, Turnering"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={styles.input}
+                                autoCapitalize="sentences"
+                              />
+                            </View>
+
+                            {/* Noter */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Noter (valgfri)</Text>
+                              <TextInput
+                                value={matchNotes}
+                                onFocus={() => scrollCreateMatchTo(620)}
+                                onChangeText={setMatchNotes}
+                                placeholder="Ekstra info til spillerne"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={[styles.input, { minHeight: 60 }]}
+                                multiline
+                              />
+                            </View>
                           </View>
-                        )}
-
-                        {/* Dato + tid */}
-                        <View style={{ flexDirection: "row", gap: 10 }}>
-                          <View style={[styles.inputWrap, { flex: 1 }]}>
-                            <Text style={styles.inputLabel}>Dato</Text>
-                            <TextInput
-                              value={matchDate}
-                              onChangeText={setMatchDate}
-                              placeholder="2025-03-10"
-                              placeholderTextColor="rgba(255,255,255,0.35)"
-                              style={styles.input}
-                              autoCapitalize="none"
-                            />
-                          </View>
-
-                          <View style={[styles.inputWrap, { flex: 1 }]}>
-                            <Text style={styles.inputLabel}>Tidspunkt</Text>
-                            <TextInput
-                              value={matchTime}
-                              onChangeText={setMatchTime}
-                              placeholder="19:30"
-                              placeholderTextColor="rgba(255,255,255,0.35)"
-                              style={styles.input}
-                              autoCapitalize="none"
-                            />
-                          </View>
-                        </View>
-
-                        {/* Hjemme / ude */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Bane</Text>
-                          <View style={styles.rolePicker}>
-                            <Pressable
-                              onPress={() => setMatchIsHome(true)}
-                              style={[
-                                styles.roleChip,
-                                matchIsHome === true && styles.roleChipActive,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.roleChipText,
-                                  matchIsHome === true && styles.roleChipTextActive,
-                                ]}
-                              >
-                                Hjemme
-                              </Text>
-                            </Pressable>
-
-                            <Pressable
-                              onPress={() => setMatchIsHome(false)}
-                              style={[
-                                styles.roleChip,
-                                matchIsHome === false && styles.roleChipActive,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.roleChipText,
-                                  matchIsHome === false && styles.roleChipTextActive,
-                                ]}
-                              >
-                                Ude
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-
-                        {/* Liga */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Liga (valgfri)</Text>
-                          <TextInput
-                            value={matchLeague}
-                            onFocus={() => scrollCreateMatchTo(260)}
-                            onChangeText={setMatchLeague}
-                            placeholder="Fx U15 A, 2. division"
-                            placeholderTextColor="rgba(255,255,255,0.35)"
-                            style={styles.input}
-                            autoCapitalize="none"
-                          />
-                        </View>
-
-                        {/* Modstander */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Modstander</Text>
-                          <TextInput
-                            onFocus={() => scrollCreateMatchTo(340)}
-                            value={matchOpponent}
-                            onChangeText={setMatchOpponent}
-                            placeholder="Fx Køge, Brøndby"
-                            placeholderTextColor="rgba(255,255,255,0.35)"
-                            style={styles.input}
-                            autoCapitalize="words"
-                          />
-                        </View>
-
-                        {/* Type */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Type (valgfri)</Text>
-                          <TextInput
-                            value={matchType}
-                            onFocus={() => scrollCreateMatchTo(430)}
-                            onChangeText={setMatchType}
-                            placeholder="Fx Træningskamp, Turnering"
-                            placeholderTextColor="rgba(255,255,255,0.35)"
-                            style={styles.input}
-                            autoCapitalize="sentences"
-                          />
-                        </View>
-
-                        {/* Noter */}
-                        <View style={styles.inputWrap}>
-                          <Text style={styles.inputLabel}>Noter (valgfri)</Text>
-                          <TextInput
-                            value={matchNotes}
-                            onFocus={() => scrollCreateMatchTo(620)}
-                            onChangeText={setMatchNotes}
-                            placeholder="Ekstra info til spillerne"
-                            placeholderTextColor="rgba(255,255,255,0.35)"
-                            style={[styles.input, { minHeight: 60 }]}
-                            multiline
-                          />
-                        </View>
-
+                        </TouchableWithoutFeedback>
                       </ScrollView>
                     </KeyboardAvoidingView>
                   </View>
@@ -2262,7 +2268,7 @@ const grantAdminToPlayer = async () => {
                       <Text style={styles.secondaryButtonText}>Tilbage</Text>
                     </Pressable>
                   </View>
-                </KeyboardDismissView>
+                </>
               ) : mode === "players" ? (
                 <>
                   {/* Players view */}
@@ -2892,6 +2898,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 10,
+    marginTop: 10,
     borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.04)",
   },

@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
   KeyboardAvoidingView,
 } from "react-native";
-import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
@@ -481,18 +480,18 @@ export default function ChatScreen() {
   }
 
     return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} edges={["left", "right", "bottom"]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 90}
       >
           <View style={styles.inner}>
-            <KeyboardDismissView 
-                style={[
+            <View
+              style={[
                 styles.container,
                 { flexDirection: isWide ? "row" : "column" },
-                ]}
+              ]}
             >
               {/* Sidebar - holdliste */}
               <View
@@ -580,7 +579,8 @@ export default function ChatScreen() {
                           ref={scrollRef}
                           style={styles.messagesScroll}
                           contentContainerStyle={{ paddingBottom: 8 }}
-                          keyboardShouldPersistTaps="handled"
+                          keyboardShouldPersistTaps="never"
+                          keyboardDismissMode="on-drag"
                           nestedScrollEnabled
                           onContentSizeChange={() =>
                             scrollRef.current?.scrollToEnd({ animated: true })
@@ -659,7 +659,8 @@ export default function ChatScreen() {
                   </>
                 )}
               </View>
-            </KeyboardDismissView>
+
+            </View>
           </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

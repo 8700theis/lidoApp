@@ -47,7 +47,7 @@ export default function AdminMatchesScreen() {
 
   const [matches, setMatches] = useState<AdminMatch[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const [signupFilter, setSignupFilter] = useState<"all" | "availability" | "preselected" | "locked">("all");
   const [selected, setSelected] = useState<AdminMatch | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -300,6 +300,11 @@ export default function AdminMatchesScreen() {
     return `${day}.${month}.${year} · ${hours}:${minutes}`;
   };
 
+  const filteredMatches =
+    signupFilter === "all"
+      ? matches
+      : matches.filter((m) => m.signup_mode === signupFilter);
+
   const signupModeLabel = (mode: string) => {
     if (mode === "preselected") return "Hold sat";
     if (mode === "locked") return "Låst";
@@ -469,22 +474,98 @@ export default function AdminMatchesScreen() {
       <KeyboardDismissView style={{ flex: 1 }}>
         <View style={styles.inner}>
           {!selected && (
-            <Text style={styles.screenTitle}>Kampe (admin)</Text>
+            <>
+              <View style={styles.toggleRow}>
+                <Pressable
+                  onPress={() => setSignupFilter("all")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "all" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "all" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Alle
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setSignupFilter("availability")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "availability" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "availability" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Klarmelding
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setSignupFilter("preselected")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "preselected" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "preselected" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Hold sat
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setSignupFilter("locked")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "locked" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "locked" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Låst
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.screenTitle}>Kampe</Text>
+            </>
           )}
 
           {loading ? (
             <View style={{ marginTop: 16 }}>
               <ActivityIndicator size="small" color={COLORS.accent} />
             </View>
-          ) : matches.length === 0 ? (
-            <Text style={styles.textSoft}>Ingen kampe oprettet endnu.</Text>
+          ) : filteredMatches.length === 0 ? (
+            <Text style={styles.textSoft}>
+              {signupFilter === "all"
+                ? "Ingen kampe oprettet endnu."
+                : "Ingen kampe matcher det valgte filter."}
+            </Text>
           ) : !selected ? (
             <ScrollView
               style={{ flex: 1 }}
               contentContainerStyle={{ gap: 6, paddingBottom: 16 }}
               showsVerticalScrollIndicator={false}
             >
-              {matches.map((m) => {
+              {filteredMatches.map((m) => {
                 const isSelected = false;
                 return (
                   <Pressable
@@ -1246,5 +1327,34 @@ const styles = StyleSheet.create({
     color: COLORS.textSoft,
     fontSize: 12,
     fontWeight: "500",
+  },
+  toggleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+
+  toggleChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  toggleChipActive: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.55)",
+  },
+
+  toggleChipText: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  toggleChipTextActive: {
+    color: COLORS.accent,
   },
 });
