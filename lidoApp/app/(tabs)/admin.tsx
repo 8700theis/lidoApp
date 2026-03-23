@@ -776,7 +776,7 @@ export default function AdminMatchesScreen() {
 
           {/* Edit-panel i bunden, hvis kamp valgt */}
           {selected && (
-            <KeyboardDismissView style={{ flex: 1 }}>
+            <View style={{ flex: 1 }}>
               <View style={styles.editPanel}>
                 <Text style={styles.editTitle}>Rediger kamp</Text>
 
@@ -1184,7 +1184,7 @@ export default function AdminMatchesScreen() {
                   </Pressable>
                 </View>
               </View>
-            </KeyboardDismissView>
+            </View>
           )}
         </View>
       </View>
