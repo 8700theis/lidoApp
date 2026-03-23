@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useFocusEffect } from "expo-router";
 import {
   View,
@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { supabase } from "../../lib/supabase";
@@ -35,6 +37,7 @@ type AdminMatch = {
   opponent: string;
   match_type: string | null;
   status: string;
+  effective_status?: "planned" | "played" | "cancelled";
   notes: string | null;
   signup_mode: "availability" | "preselected" | "locked";
 };
@@ -47,7 +50,7 @@ export default function AdminMatchesScreen() {
 
   const [matches, setMatches] = useState<AdminMatch[]>([]);
   const [loading, setLoading] = useState(true);
-  const [signupFilter, setSignupFilter] = useState<"all" | "availability" | "preselected" | "locked">("all");
+  const [signupFilter, setSignupFilter] = useState<"upcoming" | "availability" | "preselected" | "locked" | "played" | "cancelled">("upcoming");
   const [selected, setSelected] = useState<AdminMatch | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -79,6 +82,8 @@ export default function AdminMatchesScreen() {
   const [readyPlayers, setReadyPlayers] = useState<{ email: string; name: string | null }[]>([]);
 
   const [pendingPlayers, setPendingPlayers] = useState<{ email: string; name: string | null }[]>([]);
+
+  const editScrollRef = useRef<ScrollView | null>(null);
 
   // 1) tjek admin-flag
   useEffect(() => {
@@ -113,9 +118,9 @@ export default function AdminMatchesScreen() {
     const [{ data: matchData, error: matchErr }, { data: teamData, error: teamErr }] =
       await Promise.all([
         supabase
-          .from("matches")
+          .from("matches_with_effective_status")
           .select(
-            "id, team_id, start_at, is_home, league, opponent, match_type, status, notes, signup_mode"
+            "id, team_id, start_at, is_home, league, opponent, match_type, status, effective_status, notes, signup_mode"
           )
           .order("start_at", { ascending: true }),
         supabase.from("teams").select("id, name"),
@@ -300,15 +305,46 @@ export default function AdminMatchesScreen() {
     return `${day}.${month}.${year} · ${hours}:${minutes}`;
   };
 
-  const filteredMatches =
-    signupFilter === "all"
-      ? matches
-      : matches.filter((m) => m.signup_mode === signupFilter);
+  const filteredMatches = matches
+    .filter((m) => {
+      const effectiveStatus = m.effective_status ?? m.status;
+
+      if (signupFilter === "played") return effectiveStatus === "played";
+      if (signupFilter === "cancelled") return effectiveStatus === "cancelled";
+
+      if (effectiveStatus !== "planned") return false;
+
+      if (signupFilter === "upcoming") return true;
+      if (signupFilter === "availability") return m.signup_mode === "availability";
+      if (signupFilter === "preselected") return m.signup_mode === "preselected";
+      if (signupFilter === "locked") return m.signup_mode === "locked";
+
+      return true;
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.start_at).getTime();
+      const bTime = new Date(b.start_at).getTime();
+
+      if (signupFilter === "played" || signupFilter === "cancelled") {
+        return bTime - aTime; // nyeste først
+      }
+
+      return aTime - bTime; // kommende: nærmest først
+    });
 
   const signupModeLabel = (mode: string) => {
     if (mode === "preselected") return "Hold sat";
     if (mode === "locked") return "Låst";
     return "Klarmelding";
+  };
+
+  const scrollEditTo = (y: number) => {
+    setTimeout(() => {
+      editScrollRef.current?.scrollTo({
+        y,
+        animated: true,
+      });
+    }, 120);
   };
 
   const saveChanges = async () => {
@@ -471,25 +507,25 @@ export default function AdminMatchesScreen() {
 
   return (
     <View style={styles.root}>
-      <KeyboardDismissView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <View style={styles.inner}>
           {!selected && (
             <>
               <View style={styles.toggleRow}>
                 <Pressable
-                  onPress={() => setSignupFilter("all")}
+                  onPress={() => setSignupFilter("upcoming")}
                   style={[
                     styles.toggleChip,
-                    signupFilter === "all" && styles.toggleChipActive,
+                    signupFilter === "upcoming" && styles.toggleChipActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.toggleChipText,
-                      signupFilter === "all" && styles.toggleChipTextActive,
+                      signupFilter === "upcoming" && styles.toggleChipTextActive,
                     ]}
                   >
-                    Alle
+                    Alle kommende
                   </Text>
                 </Pressable>
 
@@ -543,6 +579,40 @@ export default function AdminMatchesScreen() {
                     Låst
                   </Text>
                 </Pressable>
+
+                <Pressable
+                  onPress={() => setSignupFilter("played")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "played" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "played" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Spillet
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setSignupFilter("cancelled")}
+                  style={[
+                    styles.toggleChip,
+                    signupFilter === "cancelled" && styles.toggleChipActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleChipText,
+                      signupFilter === "cancelled" && styles.toggleChipTextActive,
+                    ]}
+                  >
+                    Aflyst
+                  </Text>
+                </Pressable>
               </View>
 
               <Text style={styles.screenTitle}>Kampe</Text>
@@ -555,8 +625,12 @@ export default function AdminMatchesScreen() {
             </View>
           ) : filteredMatches.length === 0 ? (
             <Text style={styles.textSoft}>
-              {signupFilter === "all"
-                ? "Ingen kampe oprettet endnu."
+              {signupFilter === "upcoming"
+                ? "Ingen kommende kampe endnu."
+                : signupFilter === "played"
+                ? "Ingen spillede kampe endnu."
+                : signupFilter === "cancelled"
+                ? "Ingen aflyste kampe endnu."
                 : "Ingen kampe matcher det valgte filter."}
             </Text>
           ) : !selected ? (
@@ -636,7 +710,11 @@ export default function AdminMatchesScreen() {
             </ScrollView>
           ) : (
             <Pressable
-              onPress={() => {}}
+              onPress={() => {
+                if (!saving && !deleting) {
+                  setSelected(null);
+                }
+              }}
               style={[styles.matchRow, styles.matchRowActive, { marginBottom: 12 }]}
             >
               <View
@@ -686,7 +764,7 @@ export default function AdminMatchesScreen() {
                   </View>
 
                   <Ionicons
-                    name="chevron-forward"
+                    name="chevron-up"
                     size={16}
                     color={COLORS.textSoft}
                     style={{ marginTop: 8, opacity: 0.6 }}
@@ -698,350 +776,387 @@ export default function AdminMatchesScreen() {
 
           {/* Edit-panel i bunden, hvis kamp valgt */}
           {selected && (
-            <View style={styles.editPanel}>
-              <Text style={styles.editTitle}>Rediger kamp</Text>
+            <KeyboardDismissView style={{ flex: 1 }}>
+              <View style={styles.editPanel}>
+                <Text style={styles.editTitle}>Rediger kamp</Text>
 
-              {/* Lille meta-linje med hold + dato/tid */}
-              <Text style={styles.editMeta}>
-                {selected.team_name} - {formatDateTime(selected.start_at)}
-              </Text>
+                {/* Lille meta-linje med hold + dato/tid */}
+                <Text style={styles.editMeta}>
+                  {selected.team_name} - {formatDateTime(selected.start_at)}
+                </Text>
 
-              {/* Hvis kampen er LÅST → vælg hvordan den skal frigives */}
-              {selected.signup_mode === "locked" && (
-                <>
-                  <Text style={styles.editLabel}>Frigiv som:</Text>
-                  <View style={styles.chipRow}>
-                    <Pressable
-                      onPress={() => setEditSignupMode("availability")}
-                      style={[
-                        styles.chip,
-                        editSignupMode === "availability" && styles.chipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          editSignupMode === "availability" && styles.chipTextActive,
-                        ]}
-                      >
-                        Klarmelding
-                      </Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setEditSignupMode("preselected")}
-                      style={[
-                        styles.chip,
-                        editSignupMode === "preselected" && styles.chipActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          editSignupMode === "preselected" && styles.chipTextActive,
-                        ]}
-                      >
-                        Sæt hold
-                      </Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
-
-              {/* Selve felterne gøres scrollbare */}
-              <ScrollView
-                contentContainerStyle={{ gap: 6, paddingBottom: selected ? 6 : 16 }}
-                showsVerticalScrollIndicator={false}
-              >
-                {/* Liga */}
-                <Text style={styles.editLabel}>Liga</Text>
-                <TextInputLike
-                  value={editLeague}
-                  onChangeText={setEditLeague}
-                  placeholder="Fx Serie 3"
-                />
-
-                {/* Modstander */}
-                <Text style={styles.editLabel}>Modstander</Text>
-                <TextInputLike
-                  value={editOpponent}
-                  onChangeText={setEditOpponent}
-                  placeholder="Fx BK Frem"
-                />
-
-                {/* Bane (hjemme/ude) */}
-                <Text style={styles.editLabel}>Bane</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    onPress={() => setEditIsHome(true)}
-                    style={[
-                      styles.chip,
-                      editIsHome && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editIsHome && styles.chipTextActive,
-                      ]}
-                    >
-                      Hjemme
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => setEditIsHome(false)}
-                    style={[
-                      styles.chip,
-                      !editIsHome && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        !editIsHome && styles.chipTextActive,
-                      ]}
-                    >
-                      Ude
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {/* Type */}
-                <Text style={styles.editLabel}>Type</Text>
-                <TextInputLike
-                  value={editType}
-                  onChangeText={setEditType}
-                  placeholder="Fx Træningskamp, Turnering"
-                />
-
-                {/* Status */}
-                <Text style={styles.editLabel}>Status</Text>
-                <View style={styles.chipRow}>
-                  <Pressable
-                    onPress={() => setEditStatus("planned")}
-                    style={[
-                      styles.chip,
-                      editStatus === "planned" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editStatus === "planned" && styles.chipTextActive,
-                      ]}
-                    >
-                      Planlagt
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => setEditStatus("played")}
-                    style={[
-                      styles.chip,
-                      editStatus === "played" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editStatus === "played" && styles.chipTextActive,
-                      ]}
-                    >
-                      Spillet
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    onPress={() => setEditStatus("cancelled")}
-                    style={[
-                      styles.chip,
-                      editStatus === "cancelled" && styles.chipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        editStatus === "cancelled" && styles.chipTextActive,
-                      ]}
-                    >
-                      Aflyst
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {/* Note */}
-                <Text style={styles.editLabel}>Note</Text>
-                <TextInputLike
-                  value={editNote}
-                  onChangeText={setEditNote}
-                  placeholder="Ekstra info til kampen"
-                  multiline
-                />
-
-                {/* --- Signup / roster logik --- */}
-
-                {/* 1) availability → vis klarmeldte spillere */}
-                {selected.signup_mode === "availability" && (
+                {/* Hvis kampen er LÅST → vælg hvordan den skal frigives */}
+                {selected.signup_mode === "locked" && (
                   <>
-                    <Text style={styles.editLabel}>Klarmeldte spillere ({readyPlayers.length})</Text>
-                    {readyPlayers.length === 0 ? (
-                      <Text style={styles.textSoft}>
-                        Ingen spillere har meldt sig klar endnu.
-                      </Text>
-                    ) : (
-                      <View style={{ marginTop: 4, gap: 6 }}>
-                        {readyPlayers.map((p) => {
-                          const email = p.email.toLowerCase();
-                          const isSelected = editSelectedRoster.includes(email);
+                    <Text style={styles.editLabel}>Frigiv som:</Text>
+                    <View style={styles.chipRow}>
+                      <Pressable
+                        onPress={() => setEditSignupMode("availability")}
+                        style={[
+                          styles.chip,
+                          editSignupMode === "availability" && styles.chipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            editSignupMode === "availability" && styles.chipTextActive,
+                          ]}
+                        >
+                          Klarmelding
+                        </Text>
+                      </Pressable>
 
-                          return (
-                            <Pressable
-                              key={email}
-                              onPress={() =>
-                                setEditSelectedRoster((prev) =>
-                                  prev.includes(email)
-                                    ? prev.filter((e) => e !== email)
-                                    : [...prev, email]
-                                )
-                              }
-                              style={[
-                                styles.rosterRow,
-                                isSelected && styles.rosterRowActive,
-                              ]}
-                            >
-                              <Text style={styles.rosterName}>
-                                {p.name ?? p.email}
-                              </Text>
-                              {isSelected && (
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color={COLORS.accent}
-                                />
-                              )}
-                            </Pressable>
-                          );
-                        })}
+                      <Pressable
+                        onPress={() => setEditSignupMode("preselected")}
+                        style={[
+                          styles.chip,
+                          editSignupMode === "preselected" && styles.chipActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            editSignupMode === "preselected" && styles.chipTextActive,
+                          ]}
+                        >
+                          Sæt hold
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+
+                {/* Selve felterne gøres scrollbare */}
+                <View style={{ flex: 1 }}>
+                  <KeyboardAvoidingView
+                    style={{ flex: 1 }}
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    keyboardVerticalOffset={0}
+                  >
+                    <ScrollView
+                      ref={editScrollRef}
+                      style={{ flex: 1 }}
+                      contentContainerStyle={{ gap: 6, paddingBottom: 160 }}
+                      showsVerticalScrollIndicator={false}
+                      keyboardShouldPersistTaps="handled"
+                      keyboardDismissMode="interactive"
+                    >
+                      {/* Liga */}
+                      <Text style={styles.editLabel}>Liga</Text>
+                      <TextInputLike
+                        value={editLeague}
+                        onChangeText={setEditLeague}
+                        onFocus={() => scrollEditTo(20)}
+                        placeholder="Fx Serie 3"
+                      />
+
+                      {/* Modstander */}
+                      <Text style={styles.editLabel}>Modstander</Text>
+                      <TextInputLike
+                        value={editOpponent}
+                        onChangeText={setEditOpponent}
+                        onFocus={() => scrollEditTo(60)}
+                        placeholder="Fx BK Frem"
+                      />
+
+                      {/* Bane (hjemme/ude) */}
+                      <Text style={styles.editLabel}>Bane</Text>
+                      <View style={styles.chipRow}>
+                        <Pressable
+                          onPress={() => setEditIsHome(true)}
+                          style={[
+                            styles.chip,
+                            editIsHome && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editIsHome && styles.chipTextActive,
+                            ]}
+                          >
+                            Hjemme
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => setEditIsHome(false)}
+                          style={[
+                            styles.chip,
+                            !editIsHome && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              !editIsHome && styles.chipTextActive,
+                            ]}
+                          >
+                            Ude
+                          </Text>
+                        </Pressable>
                       </View>
-                    )}
-                    <Text style={[styles.textSoft, { marginTop: 4 }]}>
-                      Når du gemmer, bliver de valgte spillere sat som udtagne til kampen.
-                    </Text>
 
-                    <Text style={[styles.editLabel, { marginTop: 12 }]}>Mangler svar ({pendingPlayers.length})</Text>
+                      {/* Type */}
+                      <Text style={styles.editLabel}>Type</Text>
+                      <TextInputLike
+                        value={editType}
+                        onChangeText={setEditType}
+                        onFocus={() => scrollEditTo(100)}
+                        placeholder="Fx Træningskamp, Turnering"
+                      />
 
-                    {pendingPlayers.length === 0 ? (
-                      <Text style={styles.textSoft}>Alle spillere har svaret.</Text>
-                    ) : (
-                      <View style={{ marginTop: 4, gap: 6 }}>
-                        {pendingPlayers.map((p) => (
-                          <View key={p.email} style={styles.pendingRow}>
-                            <Text style={styles.pendingName}>
-                              {p.name ?? p.email}
+                      {/* Status */}
+                      <Text style={styles.editLabel}>Status</Text>
+                      <View style={styles.chipRow}>
+                        <Pressable
+                          onPress={() => setEditStatus("planned")}
+                          style={[
+                            styles.chip,
+                            editStatus === "planned" && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editStatus === "planned" && styles.chipTextActive,
+                            ]}
+                          >
+                            Planlagt
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => setEditStatus("played")}
+                          style={[
+                            styles.chip,
+                            editStatus === "played" && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editStatus === "played" && styles.chipTextActive,
+                            ]}
+                          >
+                            Spillet
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => setEditStatus("cancelled")}
+                          style={[
+                            styles.chip,
+                            editStatus === "cancelled" && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editStatus === "cancelled" && styles.chipTextActive,
+                            ]}
+                          >
+                            Aflyst
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      {/* Note */}
+                      <Text style={styles.editLabel}>Note</Text>
+                      <TextInputLike
+                        value={editNote}
+                        onChangeText={setEditNote}
+                        onFocus={() => scrollEditTo(160)}
+                        placeholder="Ekstra info til kampen"
+                        multiline
+                      />
+
+                      {/* --- Signup / roster logik --- */}
+
+                      {/* 1) availability → vis klarmeldte spillere */}
+                      {selected.signup_mode === "availability" && (
+                        <>
+                          <Text style={styles.editLabel}>Klarmeldte spillere ({readyPlayers.length})</Text>
+                          {readyPlayers.length === 0 ? (
+                            <Text style={styles.textSoft}>
+                              Ingen spillere har meldt sig klar endnu.
                             </Text>
-                          </View>
-                        ))}
+                          ) : (
+                            <View style={{ marginTop: 4, gap: 6 }}>
+                              {readyPlayers.map((p) => {
+                                const email = p.email.toLowerCase();
+                                const isSelected = editSelectedRoster.includes(email);
+
+                                return (
+                                  <Pressable
+                                    key={email}
+                                    onPress={() =>
+                                      setEditSelectedRoster((prev) =>
+                                        prev.includes(email)
+                                          ? prev.filter((e) => e !== email)
+                                          : [...prev, email]
+                                      )
+                                    }
+                                    style={[
+                                      styles.rosterRow,
+                                      isSelected && styles.rosterRowActive,
+                                    ]}
+                                  >
+                                    <Text style={styles.rosterName}>
+                                      {p.name ?? p.email}
+                                    </Text>
+                                    {isSelected && (
+                                      <Ionicons
+                                        name="checkmark-circle"
+                                        size={16}
+                                        color={COLORS.accent}
+                                      />
+                                    )}
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                          <Text style={[styles.textSoft, { marginTop: 4 }]}>
+                            Når du gemmer, bliver de valgte spillere sat som udtagne til kampen.
+                          </Text>
+
+                          <Text style={[styles.editLabel, { marginTop: 12 }]}>Mangler svar ({pendingPlayers.length})</Text>
+
+                          {pendingPlayers.length === 0 ? (
+                            <Text style={styles.textSoft}>Alle spillere har svaret.</Text>
+                          ) : (
+                            <View style={{ marginTop: 4, gap: 6 }}>
+                              {pendingPlayers.map((p) => (
+                                <View key={p.email} style={styles.pendingRow}>
+                                  <Text style={styles.pendingName}>
+                                    {p.name ?? p.email}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+
+                        </>
+                      )}
+
+                      {/* 2) locked + valgt "Sæt hold" */}
+                      {selected.signup_mode === "locked" && editSignupMode === "preselected" && (
+                        <>
+                          <Text style={styles.editLabel}>Udtagne spillere</Text>
+                          {teamPlayers.length === 0 ? (
+                            <Text style={styles.textSoft}>
+                              Ingen spillere tilknyttet holdet endnu.
+                            </Text>
+                          ) : (
+                            <View style={{ marginTop: 4, gap: 6 }}>
+                              {teamPlayers.map((p) => {
+                                const email = p.email.toLowerCase();
+                                const isSelected = editSelectedRoster.includes(email);
+
+                                return (
+                                  <Pressable
+                                    key={email}
+                                    onPress={() =>
+                                      setEditSelectedRoster((prev) =>
+                                        prev.includes(email)
+                                          ? prev.filter((e) => e !== email)
+                                          : [...prev, email]
+                                      )
+                                    }
+                                    style={[
+                                      styles.rosterRow,
+                                      isSelected && styles.rosterRowActive,
+                                    ]}
+                                  >
+                                    <Text style={styles.rosterName}>
+                                      {p.name ?? p.email}
+                                    </Text>
+                                    {isSelected && (
+                                      <Ionicons
+                                        name="checkmark-circle"
+                                        size={16}
+                                        color={COLORS.accent}
+                                      />
+                                    )}
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </>
+                      )}
+
+                      {/* 3) preselected → redigér udtagne spillere */}
+                      {selected.signup_mode === "preselected" && (
+                        <>
+                          <Text style={styles.editLabel}>Udtagne spillere</Text>
+                          {teamPlayers.length === 0 ? (
+                            <Text style={styles.textSoft}>
+                              Ingen spillere tilknyttet holdet endnu.
+                            </Text>
+                          ) : (
+                            <View style={{ marginTop: 4, gap: 6 }}>
+                              {teamPlayers.map((p) => {
+                                const email = p.email.toLowerCase();
+                                const isSelected = editSelectedRoster.includes(email);
+
+                                return (
+                                  <Pressable
+                                    key={email}
+                                    onPress={() =>
+                                      setEditSelectedRoster((prev) =>
+                                        prev.includes(email)
+                                          ? prev.filter((e) => e !== email)
+                                          : [...prev, email]
+                                      )
+                                    }
+                                    style={[
+                                      styles.rosterRow,
+                                      isSelected && styles.rosterRowActive,
+                                    ]}
+                                  >
+                                    <Text style={styles.rosterName}>
+                                      {p.name ?? p.email}
+                                    </Text>
+                                    {isSelected && (
+                                      <Ionicons
+                                        name="checkmark-circle"
+                                        size={16}
+                                        color={COLORS.accent}
+                                      />
+                                    )}
+                                  </Pressable>
+                                );
+                              })}
+                            </View>
+                          )}
+                        </>
+                      )}
+                      
+                      <View style={{ marginTop: 20 }}>
+                        <Pressable
+                          onPress={deleteMatch}
+                          disabled={saving || deleting}
+                          style={[
+                            styles.dangerButton,
+                            (saving || deleting) && { opacity: 0.7 },
+                          ]}
+                        >
+                          {deleting ? (
+                            <ActivityIndicator size="small" color={COLORS.text} />
+                          ) : (
+                            <Text style={styles.dangerButtonText}>Slet kamp</Text>
+                          )}
+                        </Pressable>
                       </View>
-                    )}
 
-                  </>
-                )}
+                    </ScrollView>
+                  </KeyboardAvoidingView>
+                </View>
 
-                {/* 2) locked + valgt "Sæt hold" */}
-                {selected.signup_mode === "locked" && editSignupMode === "preselected" && (
-                  <>
-                    <Text style={styles.editLabel}>Udtagne spillere</Text>
-                    {teamPlayers.length === 0 ? (
-                      <Text style={styles.textSoft}>
-                        Ingen spillere tilknyttet holdet endnu.
-                      </Text>
-                    ) : (
-                      <View style={{ marginTop: 4, gap: 6 }}>
-                        {teamPlayers.map((p) => {
-                          const email = p.email.toLowerCase();
-                          const isSelected = editSelectedRoster.includes(email);
-
-                          return (
-                            <Pressable
-                              key={email}
-                              onPress={() =>
-                                setEditSelectedRoster((prev) =>
-                                  prev.includes(email)
-                                    ? prev.filter((e) => e !== email)
-                                    : [...prev, email]
-                                )
-                              }
-                              style={[
-                                styles.rosterRow,
-                                isSelected && styles.rosterRowActive,
-                              ]}
-                            >
-                              <Text style={styles.rosterName}>
-                                {p.name ?? p.email}
-                              </Text>
-                              {isSelected && (
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color={COLORS.accent}
-                                />
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </>
-                )}
-
-                {/* 3) preselected → redigér udtagne spillere */}
-                {selected.signup_mode === "preselected" && (
-                  <>
-                    <Text style={styles.editLabel}>Udtagne spillere</Text>
-                    {teamPlayers.length === 0 ? (
-                      <Text style={styles.textSoft}>
-                        Ingen spillere tilknyttet holdet endnu.
-                      </Text>
-                    ) : (
-                      <View style={{ marginTop: 4, gap: 6 }}>
-                        {teamPlayers.map((p) => {
-                          const email = p.email.toLowerCase();
-                          const isSelected = editSelectedRoster.includes(email);
-
-                          return (
-                            <Pressable
-                              key={email}
-                              onPress={() =>
-                                setEditSelectedRoster((prev) =>
-                                  prev.includes(email)
-                                    ? prev.filter((e) => e !== email)
-                                    : [...prev, email]
-                                )
-                              }
-                              style={[
-                                styles.rosterRow,
-                                isSelected && styles.rosterRowActive,
-                              ]}
-                            >
-                              <Text style={styles.rosterName}>
-                                {p.name ?? p.email}
-                              </Text>
-                              {isSelected && (
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color={COLORS.accent}
-                                />
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    )}
-                  </>
-                )}
-
+                {/* Knapperne står fast under scrolleren */}
                 <View style={{ marginTop: 15 }}>
                   <Pressable
                     onPress={saveChanges}
@@ -1058,40 +1173,21 @@ export default function AdminMatchesScreen() {
                     )}
                   </Pressable>
                 </View>
-                
-                <View style={{ marginTop: 20 }}>
+
+                <View style={{ marginTop: 12, gap: 8 }}>
                   <Pressable
-                    onPress={deleteMatch}
+                    onPress={() => setSelected(null)}
                     disabled={saving || deleting}
-                    style={[
-                      styles.dangerButton,
-                      (saving || deleting) && { opacity: 0.7 },
-                    ]}
+                    style={styles.secondaryButton}
                   >
-                    {deleting ? (
-                      <ActivityIndicator size="small" color={COLORS.text} />
-                    ) : (
-                      <Text style={styles.dangerButtonText}>Slet kamp</Text>
-                    )}
+                    <Text style={styles.secondaryButtonText}>Luk uden at gemme</Text>
                   </Pressable>
                 </View>
-
-              </ScrollView>
-
-              {/* Knapperne står fast under scrolleren */}
-              <View style={{ marginTop: 12, gap: 8 }}>
-                <Pressable
-                  onPress={() => setSelected(null)}
-                  disabled={saving || deleting}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Luk uden at gemme</Text>
-                </Pressable>
               </View>
-            </View>
+            </KeyboardDismissView>
           )}
         </View>
-      </KeyboardDismissView>
+      </View>
     </View>
   );
 }
@@ -1101,6 +1197,7 @@ function TextInputLike(props: {
   onChangeText: (v: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  onFocus?: () => void;
 }) {
   return (
     <View style={styles.inputWrap}>
@@ -1108,6 +1205,7 @@ function TextInputLike(props: {
         value={props.value}
         onChangeText={props.onChangeText}
         placeholder={props.placeholder}
+        onFocus={props.onFocus}
         placeholderTextColor="rgba(255,255,255,0.35)"
         style={[
           styles.input,
