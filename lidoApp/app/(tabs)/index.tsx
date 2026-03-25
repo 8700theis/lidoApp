@@ -87,6 +87,8 @@ export default function TabHome() {
 
     try {
       // admin-flag
+      let adminFlag = false;
+
       if (userId) {
         const { data: profileRow } = await supabase
           .from("profiles")
@@ -94,7 +96,8 @@ export default function TabHome() {
           .eq("id", userId)
           .single();
 
-        setIsAdmin(!!profileRow?.is_admin);
+        adminFlag = !!profileRow?.is_admin;
+        setIsAdmin(adminFlag);
         setDisplayName((profileRow?.name as string | undefined) ?? "");
       } else {
         setIsAdmin(false);
@@ -125,13 +128,25 @@ export default function TabHome() {
       );
 
       setBadges({
-        admin: !!profileRow?.is_admin,
-        captain: (captainTeamIds ?? []).length > 0,
+        admin: adminFlag,
+        captain: (captainTeams ?? []).length > 0,
         player: allTeamIds.length > 0,
       });
 
       if (allTeamIds.length === 0) {
+        setTeams(
+          ((captainTeams ?? []) as any[]).map((t) => ({
+            id: t.id as string,
+            name: t.name as string,
+          }))
+        );
+        setMatches([]);
         setUnreadChats(0);
+        setBadges({
+          admin: isAdmin,
+          captain: (captainTeams ?? []).length > 0,
+          player: false,
+        });
       } else {
         let total = 0;
 
@@ -251,6 +266,7 @@ export default function TabHome() {
           console.log("home notifications error:", error.message);
           setPendingResponseCount(0);
           setLatestNotificationText("");
+          setNotificationCount(0);
         } else {
           const rows = (data ?? []) as HomeNotification[];
           setNotificationCount(rows.filter((n) => !n.is_read).length);
@@ -385,6 +401,20 @@ export default function TabHome() {
     );
   };
 
+  function getMatchCountdown(startAt: string) {
+    const now = new Date();
+    const start = new Date(startAt);
+
+    const diffMs = start.getTime() - now.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffHours < 1) return "Kampen starter snart";
+    if (diffHours < 24) return `Kampen starter om ${diffHours} timer`;
+    if (diffDays === 1) return "Kampen starter i morgen";
+    return `Kampen starter om ${diffDays} dage`;
+  }
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.inner} edges={["left", "right", "bottom"]}>
@@ -422,6 +452,9 @@ export default function TabHome() {
                   <>
                     <Text style={styles.cardMainText}>
                       {getTeamName(nextMatch.team_id)} · {nextMatch.is_home ? "hjemme" : "ude"}
+                    </Text>
+                    <Text style={styles.cardTextSoft}>
+                      {getMatchCountdown(nextMatch.start_at)}
                     </Text>
                     <Text style={styles.cardText}>{formatStart(nextMatch.start_at)}</Text>
                     <Text style={styles.cardText}>Modstander: {nextMatch.opponent}</Text>
