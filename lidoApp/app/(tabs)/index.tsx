@@ -124,6 +124,12 @@ export default function TabHome() {
         ])
       );
 
+      setBadges({
+        admin: !!profileRow?.is_admin,
+        captain: (captainTeamIds ?? []).length > 0,
+        player: allTeamIds.length > 0,
+      });
+
       if (allTeamIds.length === 0) {
         setUnreadChats(0);
       } else {
@@ -510,16 +516,19 @@ export default function TabHome() {
 
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>Seneste notifikation</Text>
+                  <Text style={styles.cardTitle}>Notifikationer</Text>
                   <Ionicons name="notifications-outline" size={18} color={COLORS.accent} />
                 </View>
 
-                {latestNotificationText ? (
+                {notificationCount > 0 ? (
                   <>
-                    <Text style={styles.cardMainText}>{latestNotificationText}</Text>
-                    <Text style={styles.cardTextSoft}>
-                      Se kampe eller chat for at få den fulde kontekst.
+                    <Text style={styles.cardMainText}>
+                      {notificationCount} nye {notificationCount === 1 ? "notifikation" : "notifikationer"}
                     </Text>
+                    <Text style={styles.cardTextSoft}>
+                      {latestNotificationText || "Der er nyt til dig i klubben."}
+                    </Text>
+
                     <Pressable
                       onPress={() =>
                         router.push({
@@ -530,6 +539,25 @@ export default function TabHome() {
                       style={styles.primaryButton}
                     >
                       <Text style={styles.primaryButtonText}>Åbn notifikationer</Text>
+                    </Pressable>
+                  </>
+                ) : latestNotificationText ? (
+                  <>
+                    <Text style={styles.cardMainText}>{latestNotificationText}</Text>
+                    <Text style={styles.cardTextSoft}>
+                      Du har ingen ulæste notifikationer lige nu.
+                    </Text>
+
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(modals)/profile",
+                          params: { initialMode: "notifications" },
+                        })
+                      }
+                      style={styles.secondaryCardButton}
+                    >
+                      <Text style={styles.secondaryCardButtonText}>Se alle notifikationer</Text>
                     </Pressable>
                   </>
                 ) : (
@@ -695,5 +723,21 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  secondaryCardButton: {
+    marginTop: 4,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+  },
+
+  secondaryCardButtonText: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
