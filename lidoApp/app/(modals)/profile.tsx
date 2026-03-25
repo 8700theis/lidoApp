@@ -19,7 +19,7 @@ import {
   Keyboard,
 } from "react-native";
 import KeyboardDismissView from "@/components/KeyboardDismissView";
-import { router } from "expo-router";
+import { router, useLocalSearchParams  } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
 import { Ionicons } from "@expo/vector-icons";
@@ -51,6 +51,7 @@ export default function ProfileModal() {
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const params = useLocalSearchParams<{ initialMode?: string }>();
 
   // UI state: main / create / players / edit players
   const [mode, setMode] = useState<
@@ -64,7 +65,7 @@ export default function ProfileModal() {
     | "selectCaptain"
     | "selectTeamPlayer"
     | "createMatch"
-  >("main");
+  >(params.initialMode === "notifications" ? "notifications" : "main");
 
 
   const [newName, setNewName] = useState("");

@@ -48,6 +48,7 @@ export default function TabHome() {
   const [displayName, setDisplayName] = useState("");
   const [unreadChats, setUnreadChats] = useState(0);
   const [latestNotificationText, setLatestNotificationText] = useState("");
+  const [notificationCount, setNotificationCount] = useState(0);
   const userId = session?.user?.id ?? null;
 
   const [loading, setLoading] = useState(true);
@@ -56,6 +57,11 @@ export default function TabHome() {
   const [teams, setTeams] = useState<UserTeam[]>([]);
   const [matches, setMatches] = useState<HomeMatch[]>([]);
   const [pendingResponseCount, setPendingResponseCount] = useState(0);
+  const [badges, setBadges] = useState({
+    admin: false,
+    captain: false,
+    player: false,
+  });
 
     const loadHomeData = useCallback(async () => {
       if (!email) {
@@ -66,8 +72,13 @@ export default function TabHome() {
 
         setUnreadChats(0);
         setLatestNotificationText("");
+        setNotificationCount(0);
         setDisplayName("");
-
+        setBadges({
+          admin: false,
+          captain: false,
+          player: false,
+        });
         setLoading(false);
         return;
       }
@@ -236,6 +247,7 @@ export default function TabHome() {
           setLatestNotificationText("");
         } else {
           const rows = (data ?? []) as HomeNotification[];
+          setNotificationCount(rows.filter((n) => !n.is_read).length);
 
           if (rows.length > 0) {
             const latest = rows[0];
@@ -335,6 +347,38 @@ export default function TabHome() {
     return "Klarmelding";
   };
 
+  const renderRoleBadges = () => {
+    if (!badges.admin && !badges.captain && !badges.player) return null;
+
+    return (
+      <View style={styles.roleBadge}>
+        {badges.admin && (
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={12}
+            color={COLORS.accent}
+            style={{ marginRight: 4 }}
+          />
+        )}
+        {badges.captain && (
+          <Ionicons
+            name="flag-outline"
+            size={12}
+            color="#7FB2FF"
+            style={{ marginRight: 4 }}
+          />
+        )}
+        {badges.player && (
+          <Ionicons
+            name="navigate-outline"
+            size={12}
+            color="#3EE08E"
+          />
+        )}
+      </View>
+    );
+  };
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.inner} edges={["left", "right", "bottom"]}>
@@ -343,7 +387,13 @@ export default function TabHome() {
           contentContainerStyle={styles.scrollContent}
         >
           <View style={styles.pageHeader}>
-            <Text style={styles.title}>Hej{displayName ? `, ${displayName}` : email ? `, ${email}` : ""} 👋</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>
+                Hej{displayName ? `, ${displayName}` : email ? `, ${email}` : ""} 👋
+              </Text>
+              {renderRoleBadges()}
+            </View>
+
             <Text style={styles.subtitle}>Her er dit overblik i klubben.</Text>
           </View>
 
@@ -470,6 +520,17 @@ export default function TabHome() {
                     <Text style={styles.cardTextSoft}>
                       Se kampe eller chat for at få den fulde kontekst.
                     </Text>
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(modals)/profile",
+                          params: { initialMode: "notifications" },
+                        })
+                      }
+                      style={styles.primaryButton}
+                    >
+                      <Text style={styles.primaryButtonText}>Åbn notifikationer</Text>
+                    </Pressable>
                   </>
                 ) : (
                   <>
@@ -618,5 +679,21 @@ const styles = StyleSheet.create({
     color: COLORS.accent,
     fontSize: 13,
     fontWeight: "800",
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 6,
+  },
+
+  roleBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
   },
 });
