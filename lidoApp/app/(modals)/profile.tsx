@@ -903,7 +903,7 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
       const bn = (b.name?.trim() || b.email || "").toLowerCase();
       return an.localeCompare(bn, "da");
     });
-
+    
     setPlayers(list as any);
     setPlayersLoading(false);
   };
@@ -2274,7 +2274,7 @@ const grantAdminToPlayer = async () => {
                 <>
                   {/* Players view */}
                   <View style={{ flex: 1 }}>
-                    <View style={{ gap: 10 }}>
+                    <View style={{ flex: 1, gap: 10 }}>
                       <Text style={styles.sectionTitlePlayers}>Spillere</Text>
 
                       {playersLoading ? (
@@ -2330,7 +2330,7 @@ const grantAdminToPlayer = async () => {
               ) : mode === "teams" ? (
                 <>
                   {/* Teams view */}
-                  <View style={{ gap: 10 }}>
+                  <View style={{ flex: 1, gap: 10 }}>
                     <Text style={styles.sectionTitle}>Opret hold</Text>
 
                     <View style={styles.inputWrap}>
@@ -2592,7 +2592,7 @@ const grantAdminToPlayer = async () => {
                 </>
               ) : mode === "selectCaptain" ? (
                 <>
-                  <View style={{ gap: 10 }}>
+                  <View style={{ flex: 1, gap: 10 }}>
                     <Text style={styles.sectionTitlePlayers}>Vælg kaptajn</Text>
 
                     {playersLoading ? (
@@ -2641,7 +2641,7 @@ const grantAdminToPlayer = async () => {
                 </>
               ) : mode === "selectTeamPlayer" ? (
                 <>
-                  <View style={{ gap: 10 }}>
+                  <View style={{ flex: 1, gap: 10 }}>
                     <Text style={styles.sectionTitlePlayers}>Vælg spiller</Text>
 
                     {playersLoading ? (
