@@ -142,53 +142,6 @@ export default function TabHome() {
         );
         setMatches([]);
         setUnreadChats(0);
-        setBadges({
-          admin: isAdmin,
-          captain: (captainTeams ?? []).length > 0,
-          player: false,
-        });
-      } else {
-        let total = 0;
-
-        for (const teamId of allTeamIds) {
-          const { data: readRow } = await supabase
-            .from("team_chat_reads")
-            .select("last_read_at")
-            .eq("team_id", teamId)
-            .eq("user_email", email)
-            .maybeSingle();
-
-          const lastReadAt = readRow?.last_read_at ?? null;
-
-          let query = supabase
-            .from("team_messages")
-            .select("id", { count: "exact", head: true })
-            .eq("team_id", teamId)
-            .neq("sender_email", email);
-
-          if (lastReadAt) {
-            query = query.gt("created_at", lastReadAt);
-          }
-
-          const { count, error } = await query;
-
-          if (!error) {
-            total += count ?? 0;
-          }
-        }
-
-        setUnreadChats(total);
-      }
-
-      if (allTeamIds.length === 0) {
-        setTeams(
-          ((captainTeams ?? []) as any[]).map((t) => ({
-            id: t.id as string,
-            name: t.name as string,
-          }))
-        );
-        setMatches([]);
-        setUnreadChats(0);
       } else {
         const { data: teamRows, error: teamErr } = await supabase
           .from("teams")
@@ -433,12 +386,7 @@ export default function TabHome() {
             <Text style={styles.subtitle}>Her er dit overblik i klubben.</Text>
           </View>
 
-          {loading ? (
-            <View style={styles.loadingBox}>
-              <ActivityIndicator size="small" color={COLORS.textSoft} />
-              <Text style={styles.helpText}>Henter dit overblik...</Text>
-            </View>
-          ) : (
+          <>
             <>
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -446,8 +394,9 @@ export default function TabHome() {
                   <Ionicons name="calendar-outline" size={18} color={COLORS.accent} />
                 </View>
 
-
-                {!nextMatch ? (
+                {loading ? (
+                  <Text style={styles.cardTextSoft}>Henter kamp...</Text>
+                ) : !nextMatch ? (
                   <Text style={styles.cardTextSoft}>Ingen kommende kampe endnu.</Text>
                 ) : (
                   <>
@@ -481,6 +430,7 @@ export default function TabHome() {
                     </Pressable>
                   </>
                 )}
+
               </View>
 
               <View style={styles.card}>
@@ -489,7 +439,9 @@ export default function TabHome() {
                   <Ionicons name="notifications-outline" size={18} color={COLORS.accent} />
                 </View>
 
-                {pendingResponseCount > 0 ? (
+                {loading ? (
+                  <Text style={styles.cardTextSoft}>Tjekker klarmeldinger...</Text>
+                ) : pendingResponseCount > 0 ? (
                   <>
                     <Text style={styles.cardMainText}>
                       Du mangler at svare på {pendingResponseCount}{" "}
@@ -514,6 +466,7 @@ export default function TabHome() {
                     </Text>
                   </>
                 )}
+
               </View>
               
               <View style={styles.card}>
@@ -522,7 +475,9 @@ export default function TabHome() {
                   <Ionicons name="chatbubble-outline" size={18} color={COLORS.accent} />
                 </View>
 
-                {unreadChats > 0 ? (
+                {loading ? (
+                  <Text style={styles.cardTextSoft}>Henter chat...</Text>
+                ) : unreadChats > 0 ? (
                   <>
                     <Text style={styles.cardMainText}>
                       Du har {unreadChats} ulæste {unreadChats === 1 ? "besked" : "beskeder"}
@@ -546,6 +501,7 @@ export default function TabHome() {
                     </Text>
                   </>
                 )}
+
               </View>
 
               <View style={styles.card}>
@@ -554,7 +510,9 @@ export default function TabHome() {
                   <Ionicons name="notifications-outline" size={18} color={COLORS.accent} />
                 </View>
 
-                {notificationCount > 0 ? (
+                {loading ? (
+                  <Text style={styles.cardTextSoft}>Henter notifikationer...</Text>
+                ) : notificationCount > 0 ? (
                   <>
                     <Text style={styles.cardMainText}>
                       {notificationCount} nye {notificationCount === 1 ? "notifikation" : "notifikationer"}
@@ -605,7 +563,7 @@ export default function TabHome() {
               </View>
 
             </>
-          )}
+          </>
         </ScrollView>
       </SafeAreaView>
     </View>
