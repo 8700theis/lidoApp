@@ -446,6 +446,7 @@ export default function TabHome() {
                   <Ionicons name="calendar-outline" size={18} color={COLORS.accent} />
                 </View>
 
+
                 {!nextMatch ? (
                   <Text style={styles.cardTextSoft}>Ingen kommende kampe endnu.</Text>
                 ) : (
@@ -772,5 +773,10 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 14,
     fontWeight: "700",
+  },
+  loadingText: {
+    color: COLORS.textSoft,
+    fontSize: 14,
+    opacity: 0.6,
   },
 });
