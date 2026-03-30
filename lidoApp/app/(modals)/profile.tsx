@@ -2602,7 +2602,7 @@ const grantAdminToPlayer = async () => {
             ) : mode === "teamDetail" ? (
               <>
                 {/* Team detail view */}
-                <View style={{ gap: 10 }}>
+                <View style={{flex: 1, gap: 10 }}>
                   <Text style={styles.sectionTitlePlayers}>
                     {selectedTeam ? selectedTeam.name : "Hold"}
                   </Text>
