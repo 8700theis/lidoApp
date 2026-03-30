@@ -254,12 +254,34 @@ export default function MatchesScreen() {
     return COLORS.textSoft;
   };
 
-    const openMatch = (match: MatchRow) => {
-        router.push({
-        pathname: "../match/[id]",
-        params: { id: match.id },
-        });
-    };
+  const renderMatchTypeBadge = (type?: string | null) => {
+    if (!type) return null;
+
+    let icon = "ellipse-outline";
+    let color = "rgba(255,255,255,0.5)";
+
+    if (type === "Hovedtunering") {
+      icon = "shield-outline";
+      color = "#F5C542"; // din accent
+    } else if (type === "Hverdagstunering") {
+      icon = "flash-outline";
+      color = "#7FB2FF";
+    }
+
+    return (
+      <View style={styles.matchTypeBadge}>
+        <Ionicons name={icon as any} size={14} color={color} />
+        <Text style={[styles.matchTypeText, { color }]}>{type}</Text>
+      </View>
+    );
+  };
+
+  const openMatch = (match: MatchRow) => {
+      router.push({
+      pathname: "../match/[id]",
+      params: { id: match.id },
+      });
+  };
 
   // ---------- RENDER ----------
 
@@ -394,11 +416,7 @@ export default function MatchesScreen() {
 
                       <View style={{ alignItems: "flex-end" }}>
                         {m.match_type ? (
-                          <View style={styles.typeBadge}>
-                            <Text style={styles.typeBadgeText}>
-                              {m.match_type}
-                            </Text>
-                          </View>
+                          renderMatchTypeBadge(m.match_type)
                         ) : null}
 
                         <Text
@@ -650,5 +668,20 @@ const styles = StyleSheet.create({
   },
   responsePillTextPreselected: {
     color: COLORS.accent,
+  },
+  matchTypeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  matchTypeText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
 });
