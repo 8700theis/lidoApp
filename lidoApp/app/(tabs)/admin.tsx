@@ -174,7 +174,7 @@ export default function AdminMatchesScreen() {
   useEffect(() => {
     if (!selected) return;
 
-    setEditLeague(selected.league ?? "");
+    setEditLeague(selected.league ?? "Kvalrækken");
     setEditOpponent(selected.opponent ?? "");
     setEditNote(selected.notes ?? "");
 
@@ -338,6 +338,12 @@ export default function AdminMatchesScreen() {
     return "Klarmelding";
   };
 
+  const requiredPlayersForMatchType = (type: string) => {
+    if (type === "Hovedturnering") return 4;
+    if (type === "Hverdagsturnering") return 3;
+    return 0;
+  };
+
   const scrollEditTo = (y: number) => {
     setTimeout(() => {
       editScrollRef.current?.scrollTo({
@@ -356,10 +362,23 @@ export default function AdminMatchesScreen() {
       return;
     }
 
-    const league = editLeague.trim() || null;
+    const league = editLeague.trim();
+
+    if (!league) {
+      Alert.alert("Mangler", "Vælg en liga.");
+      return;
+    }
     const notes = editNote.trim() || null;
-    const match_type = editType.trim() || null;
+    const match_type = editType.trim();
     const status = editStatus;
+
+    if (match_type !== "Hovedturnering" && match_type !== "Hverdagsturnering") {
+      Alert.alert(
+        "Mangler",
+        'Vælg om kampen er "Hovedturnering" eller "Hverdagsturnering".'
+      );
+      return;
+    }
 
     // --- Beregn nyt signup_mode + roster ---
     let newSignupMode: "availability" | "preselected" | "locked" =
@@ -386,6 +405,18 @@ export default function AdminMatchesScreen() {
     } else if (selected.signup_mode === "preselected") {
       newSignupMode = "preselected";
       newRosterEmails = editSelectedRoster;
+    }
+
+    if (newRosterEmails.length > 0) {
+      const required = requiredPlayersForMatchType(match_type);
+
+      if (required > 0 && newRosterEmails.length !== required) {
+        Alert.alert(
+          "Forkert antal spillere",
+          `${match_type} kræver præcis ${required} spillere. Du har valgt ${newRosterEmails.length}.`
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -842,15 +873,6 @@ export default function AdminMatchesScreen() {
                       keyboardShouldPersistTaps="handled"
                       keyboardDismissMode="interactive"
                     >
-                      {/* Liga */}
-                      <Text style={styles.editLabel}>Liga</Text>
-                      <TextInputLike
-                        value={editLeague}
-                        onChangeText={setEditLeague}
-                        onFocus={() => scrollEditTo(20)}
-                        placeholder="Fx Serie 3"
-                      />
-
                       {/* Modstander */}
                       <Text style={styles.editLabel}>Modstander</Text>
                       <TextInputLike
@@ -860,52 +882,85 @@ export default function AdminMatchesScreen() {
                         placeholder="Fx BK Frem"
                       />
 
-                      {/* Bane (hjemme/ude) */}
-                      <Text style={styles.editLabel}>Bane</Text>
-                      <View style={styles.chipRow}>
-                        <Pressable
-                          onPress={() => setEditIsHome(true)}
-                          style={[
-                            styles.chip,
-                            editIsHome && styles.chipActive,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.chipText,
-                              editIsHome && styles.chipTextActive,
-                            ]}
-                          >
-                            Hjemme
-                          </Text>
-                        </Pressable>
+                      {/* Type */}
+                      <View style={styles.inputWrap}>
+                        <Text style={styles.inputLabel}>Type</Text>
 
-                        <Pressable
-                          onPress={() => setEditIsHome(false)}
-                          style={[
-                            styles.chip,
-                            !editIsHome && styles.chipActive,
-                          ]}
-                        >
-                          <Text
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <Pressable
+                            onPress={() => setEditType("Hovedturnering")}
                             style={[
-                              styles.chipText,
-                              !editIsHome && styles.chipTextActive,
+                              styles.modeChip,
+                              editType === "Hovedturnering" && styles.modeChipActive,
                             ]}
                           >
-                            Ude
-                          </Text>
-                        </Pressable>
+                            <Text
+                              style={[
+                                styles.modeChipText,
+                                editType === "Hovedturnering" && styles.modeChipTextActive,
+                              ]}
+                            >
+                              Hovedturnering
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => setEditType("Hverdagsturnering")}
+                            style={[
+                              styles.modeChip,
+                              editType === "Hverdagsturnering" && styles.modeChipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.modeChipText,
+                                editType === "Hverdagsturnering" && styles.modeChipTextActive,
+                              ]}
+                            >
+                              Hverdagsturnering
+                            </Text>
+                          </Pressable>
+                        </View>
+
+                        <Text style={styles.helpText}>
+                          Hovedturnering kræver 4 spillere. Hverdagsturnering kræver 3 spillere.
+                        </Text>
                       </View>
 
-                      {/* Type */}
-                      <Text style={styles.editLabel}>Type</Text>
-                      <TextInputLike
-                        value={editType}
-                        onChangeText={setEditType}
-                        onFocus={() => scrollEditTo(100)}
-                        placeholder="Fx Træningskamp, Turnering"
-                      />
+                      {/* Liga */}
+                      <View style={styles.inputWrap}>
+                        <Text style={styles.inputLabel}>Liga</Text>
+
+                        <View style={styles.chipWrap}>
+                          {[
+                            "Serie 1",
+                            "Kvalrækken",
+                            "Danmarksserien",
+                            "3. Division",
+                            "2. Division",
+                            "1. Division",
+                            "Eliterækken",
+                          ].map((league) => (
+                            <Pressable
+                              key={league}
+                              onPress={() => setEditLeague(league)}
+                              style={[
+                                styles.modeChip,
+                                editLeague === league && styles.modeChipActive,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.modeChipText,
+                                  editLeague === league && styles.modeChipTextActive,
+                                ]}
+                              >
+                                {league}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
 
                       {/* Status */}
                       <Text style={styles.editLabel}>Status</Text>
@@ -958,6 +1013,44 @@ export default function AdminMatchesScreen() {
                             ]}
                           >
                             Aflyst
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      {/* Bane (hjemme/ude) */}
+                      <Text style={styles.editLabel}>Bane</Text>
+                      <View style={styles.chipRow}>
+                        <Pressable
+                          onPress={() => setEditIsHome(true)}
+                          style={[
+                            styles.chip,
+                            editIsHome && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              editIsHome && styles.chipTextActive,
+                            ]}
+                          >
+                            Hjemme
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => setEditIsHome(false)}
+                          style={[
+                            styles.chip,
+                            !editIsHome && styles.chipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.chipText,
+                              !editIsHome && styles.chipTextActive,
+                            ]}
+                          >
+                            Ude
                           </Text>
                         </Pressable>
                       </View>
@@ -1301,6 +1394,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSoft,
     fontSize: 12,
     marginTop: 6,
+    fontWeight: "700",
   },
   inputWrap: {
     marginTop: 4,
@@ -1309,6 +1403,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
+  inputLabel: { color: COLORS.textSoft, fontSize: 12, marginBottom: 10, fontWeight: "700", },
   input: {
     color: COLORS.text,
     fontSize: 14,
@@ -1364,8 +1459,8 @@ const styles = StyleSheet.create({
   },
   chipText: {
     color: COLORS.textSoft,
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "500",
   },
   chipTextActive: {
     color: COLORS.text,
@@ -1454,5 +1549,37 @@ const styles = StyleSheet.create({
 
   toggleChipTextActive: {
     color: COLORS.accent,
+  },
+  modeChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+
+  modeChipActive: {
+    backgroundColor: "rgba(245,197,66,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245,197,66,0.55)",
+  },
+
+  modeChipText: {
+    color: COLORS.textSoft,
+    fontSize: 11,
+    fontWeight: "500",
+  },
+
+  modeChipTextActive: {
+    color: COLORS.accent,
+  },
+  helpText: {
+    color: COLORS.textSoft,
+    fontSize: 13,
+    marginTop: 10,
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
 });

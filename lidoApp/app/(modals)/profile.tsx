@@ -17,8 +17,10 @@ import {
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
   Keyboard,
+  TouchableOpacity,
 } from "react-native";
 import KeyboardDismissView from "@/components/KeyboardDismissView";
+import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { router, useLocalSearchParams  } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
@@ -98,10 +100,14 @@ export default function ProfileModal() {
   const [matchTeamId, setMatchTeamId] = useState<string | null>(null);
   const [matchDate, setMatchDate] = useState("");   // "2025-03-10"
   const [matchTime, setMatchTime] = useState("");   // "19:30"
+  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
+  const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
+  const [pickerDate, setPickerDate] = useState(new Date());
+  const [pickerMode, setPickerMode] = useState<"date" | "time" | null>(null);
   const [matchIsHome, setMatchIsHome] = useState<null | boolean>(true); // true = hjemme, false = ude
-  const [matchLeague, setMatchLeague] = useState("");
+  const [matchLeague, setMatchLeague] = useState("Kvalrækken");
   const [matchOpponent, setMatchOpponent] = useState("");
-  const [matchType, setMatchType] = useState("");   // fx "Turnering", "Træningskamp"
+  const [matchType, setMatchType] = useState<"Hovedturnering" | "Hverdagsturnering" | "">("");
   const [matchNotes, setMatchNotes] = useState("");
   const [signupMode, setSignupMode] = useState<"availability" | "preselected" | "locked">("availability");
   const [matchTeamPlayers, setMatchTeamPlayers] = useState<Array<{ email: string; name: string | null }>>([]);
@@ -132,6 +138,14 @@ export default function ProfileModal() {
     setSignupMode("availability");
     setMatchTeamPlayers([]);
     setMatchSelectedPlayers([]);
+  };
+
+  const requiredPlayersForMatchType = (
+    type: "Hovedturnering" | "Hverdagsturnering" | ""
+  ) => {
+    if (type === "Hovedturnering") return 4;
+    if (type === "Hverdagsturnering") return 3;
+    return 0;
   };
 
   const loadNotifications = async () => {
@@ -334,7 +348,7 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
   const { width: screenW } = useWindowDimensions();
 
   // Side-sheet bredde (justér her)
-  const panelW = useMemo(() => Math.min(Math.round(screenW * 0.67), 390), [screenW]);
+  const panelW = useMemo(() => Math.min(screenW * 0.83, 480), [screenW]);
   const offscreenX = panelW + 24; // altid helt udenfor skærmen
 
   const panelX = useRef(new Animated.Value(offscreenX)).current;
@@ -649,6 +663,76 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
     }, 120);
   };
 
+  const openDatePicker = () => {
+    let base = new Date();
+
+    if (matchDate && matchTime) {
+      const parsed = new Date(`${matchDate}T${matchTime}:00`);
+      if (!isNaN(parsed.getTime())) {
+        base = parsed;
+      }
+    } else if (matchDate) {
+      const parsed = new Date(`${matchDate}T12:00:00`);
+      if (!isNaN(parsed.getTime())) {
+        base = parsed;
+      }
+    }
+
+    setPickerDate(base);
+    setPickerMode("date");
+    setIsDatePickerVisible(true);
+  };
+
+  const openTimePicker = () => {
+    let base = new Date();
+
+    if (matchDate && matchTime) {
+      const parsed = new Date(`${matchDate}T${matchTime}:00`);
+      if (!isNaN(parsed.getTime())) {
+        base = parsed;
+      }
+    } else if (matchTime) {
+      const today = new Date();
+      const parsed = new Date(
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+          today.getDate()
+        ).padStart(2, "0")}T${matchTime}:00`
+      );
+      if (!isNaN(parsed.getTime())) {
+        base = parsed;
+      }
+    }
+
+    setPickerDate(base);
+    setPickerMode("time");
+    setIsTimePickerVisible(true);
+  };
+
+  const handleConfirmDate = (date: Date) => {
+    setIsDatePickerVisible(false);
+
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+
+    setMatchDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const handleConfirmTime = (date: Date) => {
+    setIsTimePickerVisible(false);
+
+    const hh = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+
+    setMatchTime(`${hh}:${mm}`);
+  };
+
+  const hidePickers = () => {
+    setIsDatePickerVisible(false);
+    setIsTimePickerVisible(false);
+    setPickerMode(null);
+  };
+
   const createMatch = async () => {
     if (!matchTeamId) {
       Alert.alert("Mangler", "Vælg hvilket hold kampen hører til.");
@@ -670,13 +754,27 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
       return;
     }
 
-    // Ved "sæt hold" / "locked" skal der være mindst én spiller
-    if (
-      (signupMode === "preselected" || signupMode === "locked") &&
-      matchSelectedPlayers.length === 0
-    ) {
-      Alert.alert("Mangler", "Vælg mindst én spiller til kampen.");
+    if (!matchType) {
+      Alert.alert("Mangler", "Vælg om kampen er Hovedtunering eller Hverdagstunering.");
       return;
+    }
+
+    if (!matchLeague) {
+      Alert.alert("Mangler", "Vælg en liga.");
+      return;
+    }
+
+    // Ved "sæt hold" / "locked" skal der være mindst én spiller
+    if (signupMode === "preselected") {
+      const required = requiredPlayersForMatchType(matchType);
+
+      if (matchSelectedPlayers.length !== required) {
+        Alert.alert(
+          "Forkert antal spillere",
+          `${matchType} kræver præcis ${required} spillere, når du opretter kampen som "Sæt hold".`
+        );
+        return;
+      }
     }
 
     // matchDate: "2026-03-14", matchTime: "10:00"
@@ -1936,7 +2034,6 @@ const grantAdminToPlayer = async () => {
                 </KeyboardDismissView>
               ) : mode === "createMatch" ? (
                 <>
-
                   <View style={{ flex: 1 }}>
                     <KeyboardAvoidingView
                       style={{ flex: 1 }}
@@ -1959,6 +2056,7 @@ const grantAdminToPlayer = async () => {
                         <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
                           <View style={{ flex: 1 }}>
                             <Text style={styles.sectionTitle}>Opret kamp</Text>
+
                             {/* Holdvalg */}
                             <View style={styles.inputWrap}>
                               <Text style={styles.inputLabel}>Hold</Text>
@@ -1991,6 +2089,193 @@ const grantAdminToPlayer = async () => {
                                   })}
                                 </View>
                               )}
+                            </View>
+
+                            {/* Dato + tid */}
+                            <View style={{ flexDirection: "row", gap: 10 }}>
+                              <View style={[styles.inputWrap, { flex: 1 }]}>
+                                <Text style={styles.inputLabel}>Dato</Text>
+                                <TouchableOpacity
+                                  activeOpacity={0.8}
+                                  onPress={openDatePicker}
+                                  style={styles.input}
+                                >
+                                  <Text
+                                    style={{
+                                      color: matchDate ? COLORS.text : "rgba(255,255,255,0.35)",
+                                      fontSize: 15,
+                                    }}
+                                  >
+                                    {matchDate || "2025-03-10"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+
+                              <View style={[styles.inputWrap, { flex: 1 }]}>
+                                <Text style={styles.inputLabel}>Tidspunkt</Text>
+                                <TouchableOpacity
+                                  activeOpacity={0.8}
+                                  onPress={openTimePicker}
+                                  style={styles.input}
+                                >
+                                  <Text
+                                    style={{
+                                      color: matchTime ? COLORS.text : "rgba(255,255,255,0.35)",
+                                      fontSize: 15,
+                                    }}
+                                  >
+                                    {matchTime || "19:30"}
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+
+                            {/* Type */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Type</Text>
+
+                              <View style={{ flexDirection: "row", gap: 8 }}>
+                                <Pressable
+                                  onPress={() => setMatchType("Hovedturnering")}
+                                  style={[
+                                    styles.modeChip,
+                                    matchType === "Hovedturnering" && styles.modeChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.modeChipText,
+                                      matchType === "Hovedturnering" && styles.modeChipTextActive,
+                                    ]}
+                                  >
+                                    Hovedturnering
+                                  </Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => setMatchType("Hverdagsturnering")}
+                                  style={[
+                                    styles.modeChip,
+                                    matchType === "Hverdagsturnering" && styles.modeChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.modeChipText,
+                                      matchType === "Hverdagsturnering" && styles.modeChipTextActive,
+                                    ]}
+                                  >
+                                    Hverdagsturnering
+                                  </Text>
+                                </Pressable>
+                              </View>
+
+                              <Text style={styles.helpText}>
+                                Hovedturnering kræver 4 spillere. Hverdagsturnering kræver 3 spillere.
+                              </Text>
+                            </View>
+
+                            {/* Liga */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Liga</Text>
+
+                              <View style={styles.chipWrap}>
+                                {[
+                                  "Serie 1",
+                                  "Kvalrækken",
+                                  "Danmarksserien",
+                                  "3. Division",
+                                  "2. Division",
+                                  "1. Division",
+                                  "Eliterækken",
+                                ].map((league) => (
+                                  <Pressable
+                                    key={league}
+                                    onPress={() => setMatchLeague(league)}
+                                    style={[
+                                      styles.modeChip,
+                                      matchLeague === league && styles.modeChipActive,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.modeChipText,
+                                        matchLeague === league && styles.modeChipTextActive,
+                                      ]}
+                                    >
+                                      {league}
+                                    </Text>
+                                  </Pressable>
+                                ))}
+                              </View>
+                            </View>
+
+                            {/* Hjemme / ude */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Bane</Text>
+                              <View style={styles.rolePicker}>
+                                <Pressable
+                                  onPress={() => setMatchIsHome(true)}
+                                  style={[
+                                    styles.roleChip,
+                                    matchIsHome === true && styles.roleChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.roleChipText,
+                                      matchIsHome === true && styles.roleChipTextActive,
+                                    ]}
+                                  >
+                                    Hjemme
+                                  </Text>
+                                </Pressable>
+
+                                <Pressable
+                                  onPress={() => setMatchIsHome(false)}
+                                  style={[
+                                    styles.roleChip,
+                                    matchIsHome === false && styles.roleChipActive,
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.roleChipText,
+                                      matchIsHome === false && styles.roleChipTextActive,
+                                    ]}
+                                  >
+                                    Ude
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+
+                            {/* Modstander */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Modstander</Text>
+                              <TextInput
+                                onFocus={() => scrollCreateMatchTo(340)}
+                                value={matchOpponent}
+                                onChangeText={setMatchOpponent}
+                                placeholder="Fx Køge, Brøndby"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={styles.input}
+                                autoCapitalize="words"
+                              />
+                            </View>
+
+                            {/* Noter */}
+                            <View style={styles.inputWrap}>
+                              <Text style={styles.inputLabel}>Noter (valgfri)</Text>
+                              <TextInput
+                                value={matchNotes}
+                                onFocus={() => scrollCreateMatchTo(620)}
+                                onChangeText={setMatchNotes}
+                                placeholder="Ekstra info til spillerne"
+                                placeholderTextColor="rgba(255,255,255,0.35)"
+                                style={[styles.input, { minHeight: 60 }]}
+                                multiline
+                              />
                             </View>
 
                             {/* Opret kamp som */}
@@ -2118,133 +2403,30 @@ const grantAdminToPlayer = async () => {
                               </View>
                             )}
 
-                            {/* Dato + tid */}
-                            <View style={{ flexDirection: "row", gap: 10 }}>
-                              <View style={[styles.inputWrap, { flex: 1 }]}>
-                                <Text style={styles.inputLabel}>Dato</Text>
-                                <TextInput
-                                  value={matchDate}
-                                  onChangeText={setMatchDate}
-                                  placeholder="2025-03-10"
-                                  placeholderTextColor="rgba(255,255,255,0.35)"
-                                  style={styles.input}
-                                  autoCapitalize="none"
-                                />
-                              </View>
-
-                              <View style={[styles.inputWrap, { flex: 1 }]}>
-                                <Text style={styles.inputLabel}>Tidspunkt</Text>
-                                <TextInput
-                                  value={matchTime}
-                                  onChangeText={setMatchTime}
-                                  placeholder="19:30"
-                                  placeholderTextColor="rgba(255,255,255,0.35)"
-                                  style={styles.input}
-                                  autoCapitalize="none"
-                                />
-                              </View>
-                            </View>
-
-                            {/* Hjemme / ude */}
-                            <View style={styles.inputWrap}>
-                              <Text style={styles.inputLabel}>Bane</Text>
-                              <View style={styles.rolePicker}>
-                                <Pressable
-                                  onPress={() => setMatchIsHome(true)}
-                                  style={[
-                                    styles.roleChip,
-                                    matchIsHome === true && styles.roleChipActive,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.roleChipText,
-                                      matchIsHome === true && styles.roleChipTextActive,
-                                    ]}
-                                  >
-                                    Hjemme
-                                  </Text>
-                                </Pressable>
-
-                                <Pressable
-                                  onPress={() => setMatchIsHome(false)}
-                                  style={[
-                                    styles.roleChip,
-                                    matchIsHome === false && styles.roleChipActive,
-                                  ]}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.roleChipText,
-                                      matchIsHome === false && styles.roleChipTextActive,
-                                    ]}
-                                  >
-                                    Ude
-                                  </Text>
-                                </Pressable>
-                              </View>
-                            </View>
-
-                            {/* Liga */}
-                            <View style={styles.inputWrap}>
-                              <Text style={styles.inputLabel}>Liga (valgfri)</Text>
-                              <TextInput
-                                value={matchLeague}
-                                onFocus={() => scrollCreateMatchTo(260)}
-                                onChangeText={setMatchLeague}
-                                placeholder="Fx U15 A, 2. division"
-                                placeholderTextColor="rgba(255,255,255,0.35)"
-                                style={styles.input}
-                                autoCapitalize="none"
-                              />
-                            </View>
-
-                            {/* Modstander */}
-                            <View style={styles.inputWrap}>
-                              <Text style={styles.inputLabel}>Modstander</Text>
-                              <TextInput
-                                onFocus={() => scrollCreateMatchTo(340)}
-                                value={matchOpponent}
-                                onChangeText={setMatchOpponent}
-                                placeholder="Fx Køge, Brøndby"
-                                placeholderTextColor="rgba(255,255,255,0.35)"
-                                style={styles.input}
-                                autoCapitalize="words"
-                              />
-                            </View>
-
-                            {/* Type */}
-                            <View style={styles.inputWrap}>
-                              <Text style={styles.inputLabel}>Type (valgfri)</Text>
-                              <TextInput
-                                value={matchType}
-                                onFocus={() => scrollCreateMatchTo(430)}
-                                onChangeText={setMatchType}
-                                placeholder="Fx Træningskamp, Turnering"
-                                placeholderTextColor="rgba(255,255,255,0.35)"
-                                style={styles.input}
-                                autoCapitalize="sentences"
-                              />
-                            </View>
-
-                            {/* Noter */}
-                            <View style={styles.inputWrap}>
-                              <Text style={styles.inputLabel}>Noter (valgfri)</Text>
-                              <TextInput
-                                value={matchNotes}
-                                onFocus={() => scrollCreateMatchTo(620)}
-                                onChangeText={setMatchNotes}
-                                placeholder="Ekstra info til spillerne"
-                                placeholderTextColor="rgba(255,255,255,0.35)"
-                                style={[styles.input, { minHeight: 60 }]}
-                                multiline
-                              />
-                            </View>
                           </View>
                         </TouchableWithoutFeedback>
                       </ScrollView>
                     </KeyboardAvoidingView>
                   </View>
+
+                  <DateTimePickerModal
+                    isVisible={isDatePickerVisible}
+                    mode="date"
+                    date={pickerDate}
+                    onConfirm={handleConfirmDate}
+                    onCancel={hidePickers}
+                    locale="da-DK"
+                  />
+
+                  <DateTimePickerModal
+                    isVisible={isTimePickerVisible}
+                    mode="time"
+                    date={pickerDate}
+                    onConfirm={handleConfirmTime}
+                    onCancel={hidePickers}
+                    locale="da-DK"
+                    is24Hour
+                  />
 
                   <View style={{ paddingTop: 12 }}>            
                     <Pressable
@@ -2918,7 +3100,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(245,197,66,0.35)",
   },
-  roleChipText: { color: COLORS.textSoft, fontSize: 13, fontWeight: "600" },
+  roleChipText: { color: COLORS.textSoft, fontSize: 11, fontWeight: "500" },
   roleChipTextActive: { color: COLORS.text },
 
   primaryButton: {
@@ -3061,8 +3243,8 @@ const styles = StyleSheet.create({
   },
   modeChipText: {
     color: COLORS.textSoft,
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "500",
   },
   modeChipTextActive: {
     color: COLORS.text,
@@ -3169,5 +3351,10 @@ const styles = StyleSheet.create({
     color: "#FF5252",
     fontWeight: "700",
     fontSize: 15,
+  },
+  chipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
 });
