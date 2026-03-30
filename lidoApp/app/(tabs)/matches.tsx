@@ -260,10 +260,10 @@ export default function MatchesScreen() {
     let icon = "ellipse-outline";
     let color = "rgba(255,255,255,0.5)";
 
-    if (type === "Hovedtunering") {
+    if (type === "Hovedturnering") {
       icon = "shield-outline";
       color = "#F5C542"; // din accent
-    } else if (type === "Hverdagstunering") {
+    } else if (type === "Hverdagsturnering") {
       icon = "flash-outline";
       color = "#7FB2FF";
     }
