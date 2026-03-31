@@ -70,6 +70,7 @@ export default function ChatScreen() {
   const scrollRef = useRef<ScrollView | null>(null);
   const channelsRef = useRef<Record<string, any>>({});
   const selectedTeamIdRef = useRef<string | null>(null);
+  const teamIdsRef = useRef<Set<string>>(new Set());
 
   const isWide = width >= 720;
 
@@ -175,6 +176,10 @@ export default function ChatScreen() {
   useEffect(() => {
     selectedTeamIdRef.current = selectedTeamId;
   }, [selectedTeamId]);
+
+  useEffect(() => {
+    teamIdsRef.current = new Set(teams.map((t) => t.id));
+  }, [teams]);
 
   useEffect(() => {
     const loadMembers = async () => {
@@ -288,8 +293,9 @@ export default function ChatScreen() {
 
   // ---------- REALTIME ----------
 
+// ---------- REALTIME ----------
+
   useEffect(() => {
-    // ryd tidligere kanaler
     Object.values(channelsRef.current).forEach((ch) => {
       supabase.removeChannel(ch);
     });
@@ -297,48 +303,39 @@ export default function ChatScreen() {
 
     if (!teams.length) return;
 
-    const map: Record<string, any> = {};
+    const channel = supabase
+      .channel("chat-live-messages")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "team_messages",
+        },
+        (payload) => {
+          const msg = payload.new as ChatMessage;
 
-    teams.forEach((team) => {
-      const channel = supabase
-        .channel(`team-messages-${team.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "team_messages",
-            filter: `team_id=eq.${team.id}`,
-          },
-          (payload) => {
-            const msg = payload.new as ChatMessage;
+          // ignorér beskeder fra hold brugeren ikke er medlem af
+          if (!teamIdsRef.current.has(msg.team_id)) return;
 
+          if (msg.team_id === selectedTeamIdRef.current) {
             setMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev;
-
-              if (msg.team_id === selectedTeamIdRef.current) {
-                return [...prev, msg];
-              }
-              return prev;
+              return [...prev, msg];
             });
 
-            if (msg.team_id !== selectedTeamIdRef.current) {
-              setUnreadCounts((prev) => ({
-                ...prev,
-                [msg.team_id]: (prev[msg.team_id] ?? 0) + 1,
-              }));
-            } else {
-              // hvis man allerede står i holdet, så markér det som læst igen
-              markTeamAsRead(msg.team_id);
-            }
+            markTeamAsRead(msg.team_id);
+          } else {
+            setUnreadCounts((prev) => ({
+              ...prev,
+              [msg.team_id]: (prev[msg.team_id] ?? 0) + 1,
+            }));
           }
-        )
-        .subscribe();
+        }
+      )
+      .subscribe();
 
-      map[team.id] = channel;
-    });
-
-    channelsRef.current = map;
+    channelsRef.current = { live: channel };
 
     return () => {
       Object.values(channelsRef.current).forEach((ch) => {
@@ -346,7 +343,7 @@ export default function ChatScreen() {
       });
       channelsRef.current = {};
     };
-  }, [teams, selectedTeamId]);
+  }, [teams]);
 
   // ---------- SEND MESSAGE ----------
 
