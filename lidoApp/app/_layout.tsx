@@ -38,32 +38,47 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const checkWhitelist = async () => {
-      if (!session?.user?.email) return;
+    const syncAccessAndProfile = async () => {
+      if (!session?.user?.id || !session?.user?.email) return;
 
       const email = session.user.email.toLowerCase();
 
       const { data, error } = await supabase
         .from("allowed_users")
-        .select("email")
+        .select("email,name,role,is_admin")
         .eq("email", email)
         .maybeSingle();
 
       if (error) {
-        console.log("whitelist error:", error.message);
-        // fail-safe: lad brugeren blive i appen hvis vi ikke kan tjekke
+        console.log("whitelist/profile sync error:", error.message);
         return;
       }
 
       if (!data) {
-        // her er vi ret sikre: vi kunne læse tabellen, men der er ingen række
         await supabase.auth.signOut();
         router.replace("/login");
+        return;
+      }
+
+      const { error: profileUpsertError } = await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id: session.user.id,
+            name: data.name ?? null,
+            role: data.role ?? "spiller",
+            is_admin: !!data.is_admin,
+          },
+          { onConflict: "id" }
+        );
+
+      if (profileUpsertError) {
+        console.log("profile upsert error:", profileUpsertError.message);
       }
     };
 
-    checkWhitelist();
-  }, [session?.user?.email]);
+    syncAccessAndProfile();
+  }, [session?.user?.id, session?.user?.email]);
 
 
   return (

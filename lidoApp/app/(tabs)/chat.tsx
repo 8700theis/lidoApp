@@ -69,6 +69,7 @@ export default function ChatScreen() {
 
   const scrollRef = useRef<ScrollView | null>(null);
   const channelsRef = useRef<Record<string, any>>({});
+  const selectedTeamIdRef = useRef<string | null>(null);
 
   const isWide = width >= 720;
 
@@ -170,6 +171,10 @@ export default function ChatScreen() {
   }, [email]);
 
   // ---------- LOAD MEMBERS FOR SELECTED TEAM ----------
+
+  useEffect(() => {
+    selectedTeamIdRef.current = selectedTeamId;
+  }, [selectedTeamId]);
 
   useEffect(() => {
     const loadMembers = async () => {
@@ -311,13 +316,13 @@ export default function ChatScreen() {
             setMessages((prev) => {
               if (prev.some((m) => m.id === msg.id)) return prev;
 
-              if (msg.team_id === selectedTeamId) {
+              if (msg.team_id === selectedTeamIdRef.current) {
                 return [...prev, msg];
               }
               return prev;
             });
 
-            if (msg.team_id !== selectedTeamId) {
+            if (msg.team_id !== selectedTeamIdRef.current) {
               setUnreadCounts((prev) => ({
                 ...prev,
                 [msg.team_id]: (prev[msg.team_id] ?? 0) + 1,
@@ -365,7 +370,10 @@ export default function ChatScreen() {
       if (error) {
         console.log("handleSend error:", error.message);
       } else if (data) {
-        setMessages((prev) => [...prev, data as ChatMessage]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === (data as ChatMessage).id)) return prev;
+          return [...prev, data as ChatMessage];
+        });
         setInput("");
       }
     } finally {

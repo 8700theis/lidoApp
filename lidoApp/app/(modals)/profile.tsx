@@ -595,16 +595,18 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
     }
 
     // primær rolle (til p_role)
-    const primaryRole: Role = roleAdmin ? "admin" : roleCaptain ? "kaptajn" : "spiller";
+  const primaryRole: Role = roleAdmin ? "admin" : roleCaptain ? "kaptajn" : "spiller";
+  const isAdmin = roleAdmin;
 
-    setCreating(true);
+  setCreating(true);
 
-    // 1) Opret/whitelist brugeren
-    const { error: userError } = await supabase.rpc("admin_upsert_allowed_user", {
-      p_email: email,
-      p_name: name,
-      p_role: primaryRole,
-    });
+  // 1) Opret/whitelist brugeren
+  const { error: userError } = await supabase.rpc("admin_upsert_allowed_user", {
+    p_email: email,
+    p_name: name,
+    p_role: primaryRole,
+    p_is_admin: isAdmin,
+  });
 
     if (userError) {
       setCreating(false);
