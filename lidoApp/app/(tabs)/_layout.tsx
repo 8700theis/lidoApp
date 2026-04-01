@@ -95,6 +95,33 @@ export default function TabLayout() {
     }
   }, [email]);
 
+  const refreshNotificationUnread = React.useCallback(async () => {
+    if (!email) {
+      setUnreadCount(0);
+      return;
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_email", email)
+        .eq("is_read", false)
+        .in("type", ["match_invite", "match_selected", "team_message"]);
+
+      if (error) {
+        console.log("refreshNotificationUnread error:", error.message);
+        setUnreadCount(0);
+        return;
+      }
+
+      setUnreadCount(count ?? 0);
+    } catch (e) {
+      console.log("refreshNotificationUnread unexpected error:", e);
+      setUnreadCount(0);
+    }
+  }, [email]);
+
 React.useEffect(() => {
   const checkAdmin = async () => {
     if (!session?.user?.id) {
@@ -124,21 +151,32 @@ React.useEffect(() => {
     refreshChatUnreadTotal();
   }, [refreshChatUnreadTotal]);
 
+  React.useEffect(() => {
+    refreshNotificationUnread();
+  }, [refreshNotificationUnread]);
+
   useFocusEffect(
     React.useCallback(() => {
       refreshChatUnreadTotal();
     }, [refreshChatUnreadTotal])
   );
 
+  useFocusEffect(
+    React.useCallback(() => {
+      refreshNotificationUnread();
+    }, [refreshNotificationUnread])
+  );
+
   React.useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
         refreshChatUnreadTotal();
+        refreshNotificationUnread();
       }
     });
 
     return () => sub.remove();
-  }, [refreshChatUnreadTotal]);
+  }, [refreshChatUnreadTotal, refreshNotificationUnread]);
 
   React.useEffect(() => {
     if (!email) return;
@@ -235,7 +273,7 @@ React.useEffect(() => {
                 >
                   <Text
                     style={{
-                      color: Colors[colorScheme ?? "light"].background,
+                      color: "#0B0F14",
                       fontSize: 10,
                       fontWeight: "700",
                     }}

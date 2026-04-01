@@ -222,14 +222,6 @@ export default function ProfileModal() {
     loadNotifications();
   }, [email]);
 
-  useEffect(() => {
-    loadNotifications();
-  }, [email]);
-
-  useEffect(() => {
-    loadNotifications();
-  }, [email]);
-
   const markAllNotificationsAsRead = async () => {
     const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
     if (unreadIds.length === 0) return;
@@ -247,6 +239,12 @@ export default function ProfileModal() {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
     setUnreadCount(0);
   };
+
+  useEffect(() => {
+    if (mode === "notifications" && unreadCount > 0) {
+      markAllNotificationsAsRead();
+    }
+  }, [mode, unreadCount]);
 
   const handleOpenNotification = async (notif: NotificationRow) => {
     // Markér som læst hvis den ikke allerede er det
@@ -2466,7 +2464,7 @@ const grantAdminToPlayer = async () => {
                       <Text style={styles.helpText}>Ingen whitelisted endnu.</Text>
                     ) : (
                       <ScrollView
-                        style={{ flex: 1 }}
+                        style={{ flex: 1, minHeight: 550 }}
                         contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
                         keyboardShouldPersistTaps="handled"
                       >
@@ -2670,7 +2668,7 @@ const grantAdminToPlayer = async () => {
                     <Text style={styles.helpText}>Ingen spillere på holdet endnu.</Text>
                   ) : (
                     <ScrollView 
-                      style={{ flex: 1 }}
+                      style={{ flex: 1, minHeight: 250 }}
                       contentContainerStyle={{ gap: 10, paddingBottom: 6 }}
                       >
                       {teamPlayers.map((p) => {
@@ -2754,7 +2752,7 @@ const grantAdminToPlayer = async () => {
                     <Text style={styles.primaryButtonText}>Tilføj spiller</Text>
                   </Pressable>
 
-                  <View style={{ marginTop: 24 }}>
+                  <View style={{ marginTop: 5 }}>
                     <Pressable
                       onPress={() => {
                         if (!selectedTeam) return;
