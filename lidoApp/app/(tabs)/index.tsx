@@ -30,6 +30,8 @@ type HomeMatch = {
   notes: string | null;
   signup_mode?: "availability" | "preselected" | "locked" | null;
   my_response?: "ready" | "not_ready" | null;
+  iAmSelected?: boolean;
+  homePriority?: "selected" | "availability" | "fallback";
 };
 
 type HomeNotification = {
@@ -178,7 +180,7 @@ export default function TabHome() {
         } else {
           const now = new Date();
 
-          const upcoming = ((matchRows ?? []) as any[])
+          const rawUpcoming = ((matchRows ?? []) as any[])
             .filter((m) => {
               const effectiveStatus = m.effective_status ?? m.status;
               return (
@@ -196,10 +198,45 @@ export default function TabHome() {
               match_type: (m.match_type as string | null) ?? null,
               status: (m.effective_status as string) ?? (m.status as string),
               notes: (m.notes as string | null) ?? null,
-              signup_mode: (m.signup_mode as "availability" | "preselected" | "locked" | null) ?? "availability",
+              signup_mode:
+                (m.signup_mode as "availability" | "preselected" | "locked" | null) ??
+                "availability",
+              iAmSelected: false,
+              homePriority: "fallback" as "selected" | "availability" | "fallback",
             }));
 
-          setMatches(upcoming);
+          if (rawUpcoming.length === 0) {
+            setMatches([]);
+          } else {
+            const preselectedMatchIds = rawUpcoming
+              .filter((m) => m.signup_mode === "preselected")
+              .map((m) => m.id);
+
+            let selectedIds = new Set<string>();
+
+            if (preselectedMatchIds.length > 0) {
+              const { data: rosterRows, error: rosterErr } = await supabase
+                .from("match_roster")
+                .select("match_id,email")
+                .in("match_id", preselectedMatchIds)
+                .eq("email", email);
+
+              if (rosterErr) {
+                console.log("home match_roster error:", rosterErr.message);
+              } else {
+                selectedIds = new Set(
+                  (rosterRows ?? []).map((r: any) => r.match_id as string)
+                );
+              }
+            }
+
+            const upcoming = rawUpcoming.map((m) => ({
+              ...m,
+              iAmSelected: selectedIds.has(m.id),
+            }));
+
+            setMatches(upcoming);
+          }
         }
       }
 
@@ -211,7 +248,12 @@ export default function TabHome() {
           .from("notifications")
           .select("id,type,match_id,is_read,created_at")
           .eq("user_email", email)
-          .in("type", ["match_invite"])
+          .in("type", [
+            "match_invite",
+            "match_selected",
+            "match_update",
+            "match_reminder",
+          ])
           .order("created_at", { ascending: false })
           .limit(50);
 
@@ -233,8 +275,10 @@ export default function TabHome() {
               label = "Ny klarmelding eller kampinvitation";
             } else if (latest.type === "match_selected") {
               label = "Du er blevet sat på hold";
-            } else if (latest.type === "match_cancelled") {
-              label = "En kamp er blevet aflyst";
+            } else if (latest.type === "match_update") {
+              label = "En kamp er blevet opdateret";
+            } else if (latest.type === "match_reminder") {
+              label = "Du mangler at svare på en klarmelding";
             }
 
             setLatestNotificationText(label);
@@ -289,7 +333,31 @@ export default function TabHome() {
   );
 
   const nextMatch = useMemo(() => {
-    return matches.length > 0 ? matches[0] : null;
+    if (matches.length === 0) return null;
+
+    const sorted = [...matches].sort(
+      (a, b) =>
+        new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+    );
+
+    // 1) Næstkommende kamp hvor holdet er sat, og du er udtaget
+    const selectedMatch = sorted.find(
+      (m) => m.signup_mode === "preselected" && m.iAmSelected
+    );
+    if (selectedMatch) {
+      return { ...selectedMatch, homePriority: "selected" as const };
+    }
+
+    // 2) Næstkommende klarmeldingskamp på dine hold
+    const availabilityMatch = sorted.find(
+      (m) => m.signup_mode === "availability"
+    );
+    if (availabilityMatch) {
+      return { ...availabilityMatch, homePriority: "availability" as const };
+    }
+
+    // 3) Fallback: bare første kommende kamp
+    return { ...sorted[0], homePriority: "fallback" as const };
   }, [matches]);
 
   const getTeamName = (teamId: string) =>
@@ -313,7 +381,7 @@ export default function TabHome() {
       })
       .replace(/\./g, ":");
 
-    return `${date} · ${time}`;
+    return `${date} - ${time}`;
   };
 
   const signupModeLabel = (mode?: string | null) => {
@@ -368,6 +436,20 @@ export default function TabHome() {
     return `Kampen starter om ${diffDays} dage`;
   }
 
+  const getHomeNextMatchLabel = (match: HomeMatch | null) => {
+    if (!match) return "";
+
+    if (match.homePriority === "selected") {
+      return "Du er sat på hold";
+    }
+
+    if (match.homePriority === "availability") {
+      return "Klarmelding";
+    }
+
+    return "Kommende kamp";
+  };
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.inner} edges={["left", "right", "bottom"]}>
@@ -400,8 +482,8 @@ export default function TabHome() {
                   <Text style={styles.cardTextSoft}>Ingen kommende kampe endnu.</Text>
                 ) : (
                   <>
-                    <Text style={styles.cardMainText}>
-                      {getTeamName(nextMatch.team_id)} · {nextMatch.is_home ? "hjemme" : "ude"}
+                    <Text style={styles.cardTextSoft}>
+                      {getHomeNextMatchLabel(nextMatch)}
                     </Text>
                     <Text style={styles.cardTextSoft}>
                       {getMatchCountdown(nextMatch.start_at)}

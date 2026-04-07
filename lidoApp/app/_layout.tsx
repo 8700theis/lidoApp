@@ -2,7 +2,11 @@ import { useSession } from "../hooks/useSession";
 import { useRouter } from "expo-router";
 import { Stack } from "expo-router";
 import { useEffect } from "react";
+import {
+  Platform,
+} from "react-native";
 import * as Linking from "expo-linking";
+import { registerForPushNotificationsAsync } from "../lib/push";
 import { supabase } from "../lib/supabase";
 import { StatusBar } from "expo-status-bar";
 
@@ -80,6 +84,40 @@ export default function RootLayout() {
     syncAccessAndProfile();
   }, [session?.user?.id, session?.user?.email]);
 
+  useEffect(() => {
+    const savePushToken = async () => {
+      if (!session?.user?.id || !session?.user?.email) return;
+
+      try {
+        const token = await registerForPushNotificationsAsync();
+        if (!token) return;
+
+        const email = session.user.email.toLowerCase();
+
+        const { error } = await supabase
+          .from("device_push_tokens")
+          .upsert(
+            {
+              user_id: session.user.id,
+              user_email: email,
+              expo_push_token: token,
+              platform: Platform.OS,
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "expo_push_token" }
+          );
+
+        if (error) {
+          console.log("savePushToken error:", error.message);
+        }
+      } catch (e) {
+        console.log("push registration error:", e);
+      }
+    };
+
+    savePushToken();
+  }, [session?.user?.id, session?.user?.email]);
 
   return (
     

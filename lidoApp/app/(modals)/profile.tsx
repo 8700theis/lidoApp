@@ -164,7 +164,13 @@ export default function ProfileModal() {
           "id,user_email,type,title,body,match_id,is_read,created_at"
         )
         .eq("user_email", email)
-        .in("type", ["match_invite", "match_selected", "team_message"])
+        .in("type", [
+          "match_invite",
+          "match_selected",
+          "team_message",
+          "match_update",
+          "match_reminder",
+        ])
         .order("created_at", { ascending: false })
         .limit(50);
 

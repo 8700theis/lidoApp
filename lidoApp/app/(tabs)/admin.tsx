@@ -344,6 +344,48 @@ export default function AdminMatchesScreen() {
     return 0;
   };
 
+  const buildMatchUpdateBody = (changes: string[]) => {
+    if (changes.length === 0) return "";
+    return changes.join(" • ");
+  };
+
+  const dedupeEmails = (emails: string[]) => {
+    return Array.from(
+      new Set(
+        emails
+          .map((e) => (e || "").toLowerCase().trim())
+          .filter(Boolean)
+      )
+    );
+  };
+
+  const sendMatchNotifications = async (
+    recipients: string[],
+    type: "match_update" | "match_reminder",
+    title: string,
+    body: string,
+    matchId: string
+  ) => {
+    const finalRecipients = dedupeEmails(recipients);
+
+    if (finalRecipients.length === 0) return;
+
+    const rows = finalRecipients.map((user_email) => ({
+      user_email,
+      type,
+      title,
+      body,
+      match_id: matchId,
+      is_read: false,
+    }));
+
+    const { error } = await supabase.from("notifications").insert(rows);
+
+    if (error) {
+      console.log("sendMatchNotifications error:", error.message);
+    }
+  };
+
   const scrollEditTo = (y: number) => {
     setTimeout(() => {
       editScrollRef.current?.scrollTo({
@@ -371,6 +413,34 @@ export default function AdminMatchesScreen() {
     const notes = editNote.trim() || null;
     const match_type = editType.trim();
     const status = editStatus;
+
+    const previousStatus = selected.status;
+    const previousOpponent = selected.opponent;
+    const previousIsHome = selected.is_home;
+    const previousNotes = selected.notes ?? null;
+    const previousSignupMode = selected.signup_mode;
+
+    const changeLines: string[] = [];
+
+    // 1) aflyst
+    if (previousStatus !== status && status === "cancelled") {
+      changeLines.push("Kampen er blevet aflyst");
+    }
+
+    // 2) hjemme/ude ændret
+    if (previousIsHome !== editIsHome) {
+      changeLines.push(editIsHome ? "Kampen er nu hjemme" : "Kampen er nu ude");
+    }
+
+    // 3) modstander ændret
+    if (previousOpponent !== opponent) {
+      changeLines.push(`Modstander er ændret til ${opponent}`);
+    }
+
+    // 4) note ændret
+    if ((previousNotes ?? "") !== (notes ?? "")) {
+      changeLines.push("Noten til kampen er opdateret");
+    }
 
     if (match_type !== "Hovedturnering" && match_type !== "Hverdagsturnering") {
       Alert.alert(
@@ -407,6 +477,15 @@ export default function AdminMatchesScreen() {
       newRosterEmails = editSelectedRoster;
     }
 
+    const holdIsNowSet =
+      previousSignupMode !== "preselected" &&
+      newSignupMode === "preselected" &&
+      newRosterEmails.length > 0;
+
+    if (holdIsNowSet) {
+      changeLines.push("Holdet er sat");
+    }
+
     if (newRosterEmails.length > 0) {
       const required = requiredPlayersForMatchType(match_type);
 
@@ -418,6 +497,43 @@ export default function AdminMatchesScreen() {
         return;
       }
     }
+
+    let updateRecipients: string[] = [];
+
+    // Case 1: holdet bliver sat → kun de udtagne spillere
+    if (holdIsNowSet) {
+      updateRecipients = newRosterEmails;
+    }
+    // Case 2: kamp aflyses mens den stadig er klarmelding → kun klar + mangler svar
+    else if (
+      status === "cancelled" &&
+      previousSignupMode === "availability"
+    ) {
+      updateRecipients = [
+        ...readyPlayers.map((p) => p.email),
+        ...pendingPlayers.map((p) => p.email),
+      ];
+    }
+    // Case 3: kamp aflyses når holdet allerede er sat → kun roster
+    else if (
+      status === "cancelled" &&
+      (previousSignupMode === "preselected" || newSignupMode === "preselected")
+    ) {
+      updateRecipients = newRosterEmails.length > 0 ? newRosterEmails : editSelectedRoster;
+    }
+    // Case 4: andre relevante ændringer → til dem der er relevante for kampen
+    else if (changeLines.length > 0) {
+      if (newSignupMode === "preselected" && newRosterEmails.length > 0) {
+        updateRecipients = newRosterEmails;
+      } else if (previousSignupMode === "availability") {
+        updateRecipients = [
+          ...readyPlayers.map((p) => p.email),
+          ...pendingPlayers.map((p) => p.email),
+        ];
+      }
+    }
+
+    updateRecipients = dedupeEmails(updateRecipients);
 
     setSaving(true);
 
@@ -476,6 +592,25 @@ export default function AdminMatchesScreen() {
         )
       );
 
+      if (changeLines.length > 0 && updateRecipients.length > 0) {
+        const title =
+          status === "cancelled"
+            ? `Kamp aflyst - ${selected.team_name}`
+            : holdIsNowSet
+            ? `Holdet er sat - ${selected.team_name}`
+            : `Kamp opdateret - ${selected.team_name}`;
+
+        const body = buildMatchUpdateBody(changeLines);
+
+        await sendMatchNotifications(
+          updateRecipients,
+          "match_update",
+          title,
+          body,
+          selected.id
+        );
+      }
+
       Alert.alert("Gemt ✅", "Kampen er opdateret.");
       setSelected(null);
     } catch (error: any) {
@@ -484,6 +619,29 @@ export default function AdminMatchesScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const sendReminderToPendingPlayers = async () => {
+    if (!selected) return;
+    if (pendingPlayers.length === 0) {
+      Alert.alert("Ingen mangler svar", "Alle spillere har allerede svaret.");
+      return;
+    }
+
+    const recipients = pendingPlayers.map((p) => p.email);
+
+    const title = `Mangler svar - ${selected.team_name}`;
+    const body = `Vi mangler svar på klarmelding til kampen ${selected.team_name} vs ${selected.opponent} den ${formatStart(selected.start_at)}. Giv venligst svar hurtigst muligt.`;
+
+    await sendMatchNotifications(
+      recipients,
+      "match_reminder",
+      title,
+      body,
+      selected.id
+    );
+
+    Alert.alert("Sendt ✅", "Påmindelse sendt til spillere der mangler svar.");
   };
 
   const deleteMatch = async () => {
@@ -1130,6 +1288,15 @@ export default function AdminMatchesScreen() {
                               ))}
                             </View>
                           )}
+
+                          {selected.signup_mode === "availability" && pendingPlayers.length > 0 && (
+                            <Pressable
+                              onPress={sendReminderToPendingPlayers}
+                              style={[styles.secondaryButton, { marginTop: 10 }]}
+                            >
+                              <Text style={styles.secondaryButtonText}>Ryk spillere</Text>
+                            </Pressable>
+                          )}                          
 
                         </>
                       )}
