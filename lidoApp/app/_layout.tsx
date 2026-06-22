@@ -2,9 +2,7 @@ import { useSession } from "../hooks/useSession";
 import { useRouter } from "expo-router";
 import { Stack } from "expo-router";
 import { useEffect } from "react";
-import {
-  Platform,
-} from "react-native";
+import { Platform } from "react-native";
 import * as Linking from "expo-linking";
 import { registerForPushNotificationsAsync } from "../lib/push";
 import { supabase } from "../lib/supabase";

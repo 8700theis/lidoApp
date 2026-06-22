@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 
 export async function registerForPushNotificationsAsync() {
   if (!Device.isDevice) {
+    console.log("Push virker kun på en fysisk enhed.");
     return null;
   }
 
@@ -17,6 +18,7 @@ export async function registerForPushNotificationsAsync() {
   }
 
   if (finalStatus !== "granted") {
+    console.log("Push permission blev ikke givet.");
     return null;
   }
 
@@ -25,12 +27,11 @@ export async function registerForPushNotificationsAsync() {
     Constants.easConfig?.projectId;
 
   if (!projectId) {
-    throw new Error("Missing EAS projectId for push notifications");
+    console.log("Mangler EAS projectId til push notifications.");
+    return null;
   }
 
-  const token = await Notifications.getExpoPushTokenAsync({
-    projectId,
-  });
+  const token = await Notifications.getExpoPushTokenAsync({ projectId });
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
@@ -39,5 +40,6 @@ export async function registerForPushNotificationsAsync() {
     });
   }
 
+  console.log("Expo push token:", token.data);
   return token.data;
 }
