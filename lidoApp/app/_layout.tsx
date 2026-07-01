@@ -4,6 +4,7 @@ import { Stack } from "expo-router";
 import { useEffect } from "react";
 import { Platform } from "react-native";
 import * as Linking from "expo-linking";
+import { CURRENT_ANNOUNCEMENT } from "../constants/announcement";
 import { registerForPushNotificationsAsync } from "../lib/push";
 import { supabase } from "../lib/supabase";
 import { StatusBar } from "expo-status-bar";
@@ -83,6 +84,29 @@ export default function RootLayout() {
   }, [session?.user?.id, session?.user?.email]);
 
   useEffect(() => {
+    const checkAnnouncement = async () => {
+      if (!session?.user?.id) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("last_seen_announcement")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.log("checkAnnouncement error:", error.message);
+        return;
+      }
+
+      if (data?.last_seen_announcement !== CURRENT_ANNOUNCEMENT.id) {
+        router.replace("./(modals)/announcement");
+      }
+    };
+
+    checkAnnouncement();
+  }, [session?.user?.id]);
+
+  useEffect(() => {
     const savePushToken = async () => {
       if (!session?.user?.id || !session?.user?.email) return;
 
@@ -131,6 +155,15 @@ export default function RootLayout() {
           presentation: "transparentModal",
           headerShown: false,
           contentStyle: { backgroundColor: "transparent", },
+        }}
+      />
+
+      {/* Announcement modal */}
+      <Stack.Screen
+        name="(modals)/announcement"
+        options={{
+          presentation: "modal",
+          headerShown: false,
         }}
       />
     </Stack>
