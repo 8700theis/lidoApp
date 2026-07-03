@@ -16,6 +16,7 @@ import KeyboardDismissView from "@/components/KeyboardDismissView";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
 import { formatDateTime } from "../../utils/date";
+import { sendPushToEmails } from "../../lib/sendPush";
 import { Ionicons } from "@expo/vector-icons";
 
 const COLORS = {
@@ -302,7 +303,7 @@ export default function AdminMatchesScreen() {
     const hours = d.getHours().toString().padStart(2, "0");
     const minutes = d.getMinutes().toString().padStart(2, "0");
 
-    return `${day}.${month}.${year} · ${hours}:${minutes}`;
+    return `${day}-${month}-${year} · ${hours}:${minutes}`;
   };
 
   const filteredMatches = matches
@@ -361,7 +362,7 @@ export default function AdminMatchesScreen() {
 
   const sendMatchNotifications = async (
     recipients: string[],
-    type: "match_update" | "match_reminder",
+    type: "match_update" | "match_reminder" | "match_invite" | "match_selected",
     title: string,
     body: string,
     matchId: string
@@ -384,6 +385,16 @@ export default function AdminMatchesScreen() {
     if (error) {
       console.log("sendMatchNotifications error:", error.message);
     }
+
+    await sendPushToEmails({
+      userEmails: finalRecipients,
+      title,
+      body,
+      data: {
+        type,
+        matchId,
+      },
+    });
   };
 
   const scrollEditTo = (y: number) => {
@@ -482,10 +493,6 @@ export default function AdminMatchesScreen() {
       newSignupMode === "preselected" &&
       newRosterEmails.length > 0;
 
-    if (holdIsNowSet) {
-      changeLines.push("Holdet er sat");
-    }
-
     if (newRosterEmails.length > 0) {
       const required = requiredPlayersForMatchType(match_type);
 
@@ -538,6 +545,33 @@ export default function AdminMatchesScreen() {
     setSaving(true);
 
     try {
+      // Hent gammel roster før vi sletter/opdaterer den
+      const { data: oldRosterRows, error: oldRosterErr } = await supabase
+        .from("match_roster")
+        .select("email")
+        .eq("match_id", selected.id);
+
+      if (oldRosterErr) throw oldRosterErr;
+
+      const oldRosterEmails = (oldRosterRows ?? [])
+        .map((r: any) => (r.email || "").toLowerCase().trim())
+        .filter(Boolean);
+
+      const addedRosterEmails = newRosterEmails.filter(
+        (email) => !oldRosterEmails.includes(email)
+      );
+
+      const removedRosterEmails = oldRosterEmails.filter(
+        (email) => !newRosterEmails.includes(email)
+      );
+
+      const lockedBecameAvailability =
+        previousSignupMode === "locked" && newSignupMode === "availability";
+
+      const rosterChangedWhileAlreadySet =
+        previousSignupMode === "preselected" &&
+        newSignupMode === "preselected" &&
+        (addedRosterEmails.length > 0 || removedRosterEmails.length > 0);
       // 1) Opdatér kampen
       const { error: matchErr } = await supabase
         .from("matches")
@@ -591,6 +625,61 @@ export default function AdminMatchesScreen() {
             : m
         )
       );
+
+      if (holdIsNowSet && newRosterEmails.length > 0) {
+        await sendMatchNotifications(
+          newRosterEmails,
+          "match_selected",
+          "Du er sat på hold",
+          `Du er sat på hold til kampen ${selected.team_name} mod ${opponent} den ${formatStart(
+            selected.start_at
+          )}.`,
+          selected.id
+        );
+      }
+
+      // Case: Låst kamp bliver frigivet som klarmelding
+      if (lockedBecameAvailability) {
+        const recipients = dedupeEmails(teamPlayers.map((p) => p.email));
+
+        if (recipients.length > 0) {
+          await sendMatchNotifications(
+            recipients,
+            "match_invite",
+            `Ny klarmelding - ${selected.team_name}`,
+            `Kampen ${selected.team_name} vs ${opponent} den ${formatStart(
+              selected.start_at
+            )} er nu åbnet for klarmelding. Gå ind i appen og meld dig klar eller ikke klar.`,
+            selected.id
+          );
+        }
+      }
+
+      // Case: Allerede sat hold ændres - nye spillere får besked
+      if (rosterChangedWhileAlreadySet && addedRosterEmails.length > 0) {
+        await sendMatchNotifications(
+          addedRosterEmails,
+          "match_selected",
+          `Du er sat på hold - ${selected.team_name}`,
+          `Du er blevet sat på hold til kampen ${selected.team_name} vs ${opponent} den ${formatStart(
+            selected.start_at
+          )}.`,
+          selected.id
+        );
+      }
+
+      // Case: Allerede sat hold ændres - fjernede spillere får besked
+      if (rosterChangedWhileAlreadySet && removedRosterEmails.length > 0) {
+        await sendMatchNotifications(
+          removedRosterEmails,
+          "match_update",
+          `Du skal ikke spille alligevel - ${selected.team_name}`,
+          `Du er blevet fjernet fra holdet til kampen ${selected.team_name} vs ${opponent} den ${formatStart(
+            selected.start_at
+          )}.`,
+          selected.id
+        );
+      }
 
       if (changeLines.length > 0 && updateRecipients.length > 0) {
         const title =

@@ -24,6 +24,7 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import { router, useLocalSearchParams  } from "expo-router";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
+import { sendPushToEmails } from "../../lib/sendPush";
 import { Ionicons } from "@expo/vector-icons";
 
 type ProfileRow = { role: string; is_admin: boolean; name: string | null };
@@ -901,6 +902,17 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
                   notifErr.message
                 );
               }
+
+              await sendPushToEmails({
+                userEmails: allRecipients,
+                title,
+                body,
+                data: {
+                  type: "match_invite",
+                  matchId,
+                },
+              });
+
             }
           } else if (signupMode === "preselected" || signupMode === "locked") {
             // 🟢 Kun "Du er udtaget" – til de udtagne spillere
@@ -929,6 +941,17 @@ const [editIsAdmin, setEditIsAdmin] = useState(false);
                   notifErr.message
                 );
               }
+
+              await sendPushToEmails({
+                userEmails: recipients,
+                title,
+                body,
+                data: {
+                  type: "match_selected",
+                  matchId,
+                },
+              });
+
             }
           }
         }

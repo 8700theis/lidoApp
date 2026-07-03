@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useSession } from "../../hooks/useSession";
+import { sendPushToEmails } from "../../lib/sendPush";
 
 type UserTeam = {
   id: string;
@@ -349,10 +350,12 @@ export default function ChatScreen() {
 
   const handleSend = async () => {
     if (!selectedTeamId || !email) return;
+
     const text = input.trim();
     if (!text) return;
 
     setSending(true);
+
     try {
       const { data, error } = await supabase
         .from("team_messages")
@@ -366,12 +369,53 @@ export default function ChatScreen() {
 
       if (error) {
         console.log("handleSend error:", error.message);
-      } else if (data) {
+        return;
+      }
+
+      if (data) {
         setMessages((prev) => {
           if (prev.some((m) => m.id === (data as ChatMessage).id)) return prev;
           return [...prev, data as ChatMessage];
         });
+
         setInput("");
+
+        const selectedTeam = teams.find((t) => t.id === selectedTeamId);
+
+        const [{ data: teamRow }, { data: playerRows }] = await Promise.all([
+          supabase
+            .from("teams")
+            .select("captain_email")
+            .eq("id", selectedTeamId)
+            .maybeSingle(),
+          supabase
+            .from("team_players")
+            .select("email")
+            .eq("team_id", selectedTeamId),
+        ]);
+
+        const receiverEmails = Array.from(
+          new Set(
+            [
+              teamRow?.captain_email,
+              ...(playerRows ?? []).map((p: any) => p.email),
+            ]
+              .map((e) => (e || "").toLowerCase().trim())
+              .filter((e) => e && e !== email)
+          )
+        );
+
+        await sendPushToEmails({
+          userEmails: receiverEmails,
+          title: selectedTeam?.name
+            ? `Ny besked i ${selectedTeam.name}`
+            : "Ny chatbesked",
+          body: text.length > 120 ? `${text.slice(0, 120)}...` : text,
+          data: {
+            type: "team_message",
+            teamId: selectedTeamId,
+          },
+        });
       }
     } finally {
       setSending(false);
