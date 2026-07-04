@@ -150,6 +150,37 @@ export default function TabHome() {
           .select("id,name")
           .in("id", allTeamIds);
 
+          let chatTotal = 0;
+
+          for (const teamId of allTeamIds) {
+            const { data: readRow } = await supabase
+              .from("team_chat_reads")
+              .select("last_read_at")
+              .eq("team_id", teamId)
+              .eq("user_email", email)
+              .maybeSingle();
+
+            const lastReadAt = readRow?.last_read_at ?? null;
+
+            let chatQuery = supabase
+              .from("team_messages")
+              .select("id", { count: "exact", head: true })
+              .eq("team_id", teamId)
+              .neq("sender_email", email);
+
+            if (lastReadAt) {
+              chatQuery = chatQuery.gt("created_at", lastReadAt);
+            }
+
+            const { count, error } = await chatQuery;
+
+            if (!error) {
+              chatTotal += count ?? 0;
+            }
+          }
+
+          setUnreadChats(chatTotal);
+
         if (teamErr) {
           console.log("home teams error:", teamErr.message);
           setTeams([]);

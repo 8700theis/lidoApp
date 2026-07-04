@@ -746,10 +746,30 @@ export default function AdminMatchesScreen() {
           style: "destructive",
           onPress: async () => {
             setDeleting(true);
+
+            const matchId = selected.id;
+
+            const deleteSteps = [
+              supabase.from("notifications").delete().eq("match_id", matchId),
+              supabase.from("match_responses").delete().eq("match_id", matchId),
+              supabase.from("match_roster").delete().eq("match_id", matchId),
+            ];
+
+            const results = await Promise.all(deleteSteps);
+
+            const cleanupError = results.find((r) => r.error)?.error;
+
+            if (cleanupError) {
+              setDeleting(false);
+              Alert.alert("Fejl", cleanupError.message);
+              return;
+            }
+
             const { error } = await supabase
               .from("matches")
               .delete()
-              .eq("id", selected.id);
+              .eq("id", matchId);
+
             setDeleting(false);
 
             if (error) {
