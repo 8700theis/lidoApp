@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "850811648840",
+    "project_id": "lidoapp-1b1ab",
+    "storage_bucket": "lidoapp-1b1ab.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:850811648840:android:107291f77a3c29d4bd517d",
+        "android_client_info": {
+          "package_name": "com.olebagklog.lidoApp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCViRxDWigbgn64CyGtvpVc7KDbJUR27Bs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
