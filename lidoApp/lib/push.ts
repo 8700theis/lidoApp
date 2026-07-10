@@ -9,11 +9,23 @@ export async function registerForPushNotificationsAsync() {
     return null;
   }
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  // VIGTIGT: Android-kanalen skal oprettes før permission/token.
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.MAX,
+    });
+  }
+
+  const { status: existingStatus } =
+    await Notifications.getPermissionsAsync();
+
   let finalStatus = existingStatus;
 
   if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } =
+      await Notifications.requestPermissionsAsync();
+
     finalStatus = status;
   }
 
@@ -31,15 +43,11 @@ export async function registerForPushNotificationsAsync() {
     return null;
   }
 
-  const token = await Notifications.getExpoPushTokenAsync({ projectId });
-
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "default",
-      importance: Notifications.AndroidImportance.MAX,
-    });
-  }
+  const token = await Notifications.getExpoPushTokenAsync({
+    projectId,
+  });
 
   console.log("Expo push token:", token.data);
+
   return token.data;
 }
