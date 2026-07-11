@@ -1,3 +1,4 @@
+import * as Notifications from "expo-notifications";
 import { useSession } from "../hooks/useSession";
 import { useRouter } from "expo-router";
 import { Stack } from "expo-router";
@@ -8,6 +9,15 @@ import { CURRENT_ANNOUNCEMENT } from "../constants/announcement";
 import { registerForPushNotificationsAsync } from "../lib/push";
 import { supabase } from "../lib/supabase";
 import { StatusBar } from "expo-status-bar";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function RootLayout() {
   const { session } = useSession();
